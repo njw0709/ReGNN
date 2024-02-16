@@ -1,2 +1,7 @@
 *.pdf
 *.npy
+*.dta
+/*.egg-info
+/figures
+/checkpoints
+/code
