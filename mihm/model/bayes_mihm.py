@@ -17,7 +17,7 @@ class BayesMIHM(PyroModule):
         svd=False,
         svd_matrix=None,
         k_dim=10,
-        variational_output=False,
+        device="cpu",
     ):
         super().__init__()
         controlled_var_size = controlled_var_size + interaction_var_size
@@ -31,10 +31,9 @@ class BayesMIHM(PyroModule):
             self.svd_matrix = svd_matrix
             interaction_var_size = k_dim
             self.k_dim = k_dim
+            if device == "cuda":
+                self.svd_matrix = self.svd_matrix.cuda()
         self.svd = svd
-        self.variational_output = variational_output
-        if variational_output:
-            assert hidden_layer_sizes[-1] == 2
 
         layer_input_sizes = [interaction_var_size] + hidden_layer_sizes
         self.num_layers = len(hidden_layer_sizes)
@@ -47,24 +46,25 @@ class BayesMIHM(PyroModule):
 
         self.controlled_var_weights = PyroModule[nn.Linear](controlled_var_size, 1)
         self.controlled_var_weights.weight = PyroSample(
-            dist.Normal(0.0, 1.0).expand([1, controlled_var_size]).to_event(2)
+            dist.Normal(0.0, torch.tensor(1.0, device=device))
+            .expand([1, controlled_var_size])
+            .to_event(2)
         )
         self.controlled_var_weights.bias = PyroSample(
-            dist.Normal(0.0, 5.0).expand([1]).to_event(1)
+            dist.Normal(0.0, torch.tensor(5.0, device=device)).expand([1]).to_event(1)
         )
 
-        if self.variational_output:
-            self.interaction_weight = nn.Parameter(torch.randn(1, 1))
-        else:
-            self.interaction_weight = PyroSample(
-                dist.HalfNormal(1.0).expand([1]).to_event(1)
-            )
-
+        self.interaction_weight = PyroSample(
+            dist.HalfNormal(torch.tensor(1.0, device=device)).expand([1]).to_event(1)
+        )
         self.include_interactor_bias = include_interactor_bias
         if include_interactor_bias:
             self.interactor_bias = PyroSample(
-                dist.HalfNormal(1.0).expand([1]).to_event(1)
+                dist.HalfNormal(torch.tensor(1.0, device=device))
+                .expand([1])
+                .to_event(1)
             )
+        self.to(device)
 
     def forward(self, interaction_input_vars, interactor_var, controlled_vars, y=None):
         all_linear_vars = torch.cat((controlled_vars, interaction_input_vars), 1)
@@ -82,16 +82,8 @@ class BayesMIHM(PyroModule):
                 interaction_input_vars = F.gelu(layer(interaction_input_vars))
                 interaction_input_vars = self.dropout(interaction_input_vars)
 
-        if self.variational_output:
-            mean = interaction_input_vars[:, 0]
-            std = F.softplus(interaction_input_vars[:, 1])
-            with pyro.plate("index_data", size=interaction_input_vars.size(0)):
-                predicted_index = pyro.sample(
-                    "predicted_index",
-                    dist.Normal(mean, std),
-                )
-        else:
-            predicted_index = interaction_input_vars
+        predicted_index = interaction_input_vars
+
         if self.include_interactor_bias:
             predicted_interaction_term = (
                 self.interaction_weight
@@ -106,7 +98,10 @@ class BayesMIHM(PyroModule):
             )
 
         predicted_epi = predicted_interaction_term + controlled_term
-        sigma = pyro.sample("sigma", dist.Gamma(0.5, 1))
+        sigma = pyro.sample(
+            "sigma",
+            dist.Gamma(torch.tensor(0.5, device=interaction_input_vars.device), 1),
+        )
 
         with pyro.plate("data", predicted_epi.size(0)):
             obs = pyro.sample(

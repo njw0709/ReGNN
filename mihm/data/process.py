@@ -1,10 +1,13 @@
 import pandas as pd
 import numpy as np
+from typing import Union, Sequence
 
 
 # preprocess categorical col to one hot encoding
-def binary_to_one_hot(df, binary_cats, dtype=float):
+def binary_to_one_hot(df, binary_cats: Sequence, dtype="category"):
     one_hot_maps = {}
+    if binary_cats is None:
+        binary_cats = df.columns
     for bc in binary_cats:
         unique_vals = df[bc].unique()
         if isinstance(unique_vals[0], str):
@@ -13,7 +16,9 @@ def binary_to_one_hot(df, binary_cats, dtype=float):
     return df
 
 
-def multi_cat_to_one_hot(df, multi_cats, dtype=float):
+def multi_cat_to_one_hot(df, multi_cats: Sequence, dtype="category"):
+    if multi_cats is None:
+        multi_cats = df.columns
     df2 = pd.get_dummies(df[multi_cats], columns=multi_cats, dtype=float)
     if dtype == "category":
         for c in df2.columns:
@@ -23,9 +28,11 @@ def multi_cat_to_one_hot(df, multi_cats, dtype=float):
     return df
 
 
-def standardize_continuous_cols(df, continuous_vars):
+def standardize_cols(df, columns: Sequence):
+    if columns is None:
+        columns = df.columns
     mean_std_dict = {}
-    for c in continuous_vars:
+    for c in columns:
         mean = df[c].mean()
         std = df[c].std()
         df[c] = (df[c] - mean) / std
@@ -34,7 +41,9 @@ def standardize_continuous_cols(df, continuous_vars):
 
 
 # convert ordinal columns to integer values
-def convert_categorical_to_ordinal(df, ordinal_cols):
+def convert_categorical_to_ordinal(df, ordinal_cols: Sequence):
+    if ordinal_cols is None:
+        ordinal_cols = df.columns
     for c in ordinal_cols:
         unique_values = df[c].unique()
         if isinstance(unique_values[0], str):
