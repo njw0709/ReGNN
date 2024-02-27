@@ -22,7 +22,7 @@ class BayesMIHM(PyroModule):
         super().__init__()
         controlled_var_size = controlled_var_size + interaction_var_size
         self.dropout = nn.Dropout(dropout)
-
+        self.device = device
         if svd:
             assert svd_matrix is not None
             assert k_dim <= interaction_var_size
@@ -57,6 +57,11 @@ class BayesMIHM(PyroModule):
         self.interaction_weight = PyroSample(
             dist.HalfNormal(torch.tensor(1.0, device=device)).expand([1]).to_event(1)
         )
+
+        self.interactor_main_weight = PyroSample(
+            dist.Normal(0.0, torch.tensor(1.0, device=device)).expand([1]).to_event(1)
+        )
+
         self.include_interactor_bias = include_interactor_bias
         if include_interactor_bias:
             self.interactor_bias = PyroSample(
@@ -85,19 +90,24 @@ class BayesMIHM(PyroModule):
         predicted_index = interaction_input_vars
 
         if self.include_interactor_bias:
-            predicted_interaction_term = (
-                self.interaction_weight
-                * (torch.unsqueeze(interactor_var, 1) - self.interactor_bias)
-                * predicted_index
-            )
-        else:
-            predicted_interaction_term = (
-                self.interaction_weight
-                * (torch.unsqueeze(interactor_var, 1))
-                * predicted_index
+            interactor = torch.maximum(
+                torch.tensor([[0.0]], device=self.device),
+                (torch.unsqueeze(interactor_var, 1) - self.interactor_bias),
             )
 
-        predicted_epi = predicted_interaction_term + controlled_term
+        else:
+            interactor = torch.unsqueeze(interactor_var, 1)
+
+        interactor_main_term = self.interactor_main_weight * interactor
+
+        predicted_interaction_term = (
+            self.interaction_weight * interactor * predicted_index
+        )
+
+        predicted_epi = (
+            predicted_interaction_term + controlled_term + interactor_main_term
+        )
+
         sigma = pyro.sample(
             "sigma",
             dist.Gamma(torch.tensor(0.5, device=interaction_input_vars.device), 1),
