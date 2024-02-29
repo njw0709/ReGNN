@@ -19,7 +19,9 @@ def binary_to_one_hot(df, binary_cats: Sequence, dtype="category"):
 def multi_cat_to_one_hot(df, multi_cats: Sequence, dtype="category"):
     if multi_cats is None:
         multi_cats = df.columns
-    df2 = pd.get_dummies(df[multi_cats], columns=multi_cats, dtype=float)
+    df2 = pd.get_dummies(
+        df[multi_cats], columns=multi_cats, dtype=float, drop_first=True
+    )
     if dtype == "category":
         for c in df2.columns:
             df2[c] = df2[c].astype(dtype)
