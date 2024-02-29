@@ -184,11 +184,12 @@ def train_wrapper(config):
         epochs=500,
         batch_size=config["batch_size"],
         lr=config["lr"],
-        weight_decay=config["weight_decay"],
+        weight_decay=0.1,
         eval=True,
         df_orig=df_orig,
         all_interaction_predictors=all_interaction_predictors,
         id=id,
         save_model=False,
         ray_tune=True,
+        use_stata=False,
     )

@@ -5,19 +5,18 @@ import torch
 
 if __name__ == "__main__":
     config = {
-        "layer1": tune.randint(3, 60),
-        "layer2": tune.randint(2, 30),
+        "layer1": tune.randint(2, 100),
+        "layer2": tune.randint(2, 50),
         "k_dims": tune.randint(8, 25),
         "batch_size": tune.choice([32, 64, 128, 256, 512, 800]),
         "lr": tune.loguniform(1e-5, 1e-1),
-        "weight_decay": tune.loguniform(1e-5, 1e-1),
     }
 
     scheduler = tune.schedulers.ASHAScheduler(
         metric="composite_metric",
         mode="min",
-        max_t=300,
-        grace_period=1,
+        max_t=500,
+        grace_period=150,
         reduction_factor=2,
     )
     stopper = NaNStopper(

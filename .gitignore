@@ -1,6 +1,7 @@
 *.pdf
 *.npy
 *.dta
+*.txt
 /*.egg-info
 /figures
 /checkpoints

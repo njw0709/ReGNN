@@ -6,7 +6,11 @@ from typing import Sequence, Union
 import torch.nn as nn
 import torch.optim as optim
 from mihm.model.mihm import MIHM
-from .eval import evaluate_significance, compute_index_prediction
+from .eval import (
+    evaluate_significance,
+    compute_index_prediction,
+    evaluate_significance_stata,
+)
 from .constants import TEMP_DIR
 import pandas as pd
 import os
@@ -38,6 +42,7 @@ def train_mihm(
     id: Union[None, str] = None,
     save_model: bool = False,
     ray_tune: bool = False,
+    use_stata: bool = False,
 ):
     # create dataset
     train_dataset = train_mihm_dataset.to_torch_dataset(device=device)
@@ -155,7 +160,12 @@ def train_mihm(
                 model, all_interaction_predictors
             )
             try:
-                interaction_pval = evaluate_significance(df_orig, index_predictions)
+                if use_stata:
+                    interaction_pval, (vif_heat, vif_inter) = (
+                        evaluate_significance_stata(df_orig, index_predictions)
+                    )
+                else:
+                    interaction_pval = evaluate_significance(df_orig, index_predictions)
             except Exception as e:
                 print(e)
                 interaction_pval = 0.1
