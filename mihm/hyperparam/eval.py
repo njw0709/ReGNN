@@ -9,11 +9,44 @@ import os
 import stata_setup
 import shap
 import matplotlib.pyplot as plt
+from .constants import TEMP_DIR
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
 
-stata_setup.config("/usr/local/stata17", "se")
-shap.initjs()
 
-from pystata import stata
+def init_stata():
+    stata_setup.config("/usr/local/stata17", "se")
+
+
+def init_shap():
+    shap.initjs()
+
+
+def evaluate_significance(
+    df_orig: pd.DataFrame,
+    index_predictions: np.ndarray,
+):
+    # save to file
+    df_orig["vul_index"] = index_predictions
+
+    formula_str = """
+    zPCPhenoAge_acc ~ m_HeatIndex_7d + m_HeatIndex_7d:vul_index + pmono
+    + PNK_pct + PBcell_pct + PCD8_Plus_pct + PCD4_Plus_pct + PNCD8_Plus_pct 
+    + age2016 + C(female) + C(racethn) + eduy + ihs_wealthf2016 + C(smoke2016) + C(drink2016) 
+    + bmi2016 + tractdis + C(urban) + C(mar_cat2) + C(psyche2016) + C(stroke2016) + C(hibpe2016) + C(diabe2016) 
+    + C(hearte2016) + dep2016 + ltactx2016 + mdactx2016 + vgactx2016 + C(living2016) + C(division) + adl2016
+    """
+    formula_str = formula_str.replace("\n", "")
+
+    model = smf.ols(formula=formula_str, data=df_orig).fit()
+    summary = model.summary()
+    # get significance of interaction
+    coeffs = summary.tables[1]
+    col_names = coeffs.data[0]
+    var_names = [row[0] for row in coeffs.data[1:]]
+    interaction_idx = var_names.index("m_HeatIndex_7d:vul_index")
+    pval = float(coeffs.data[interaction_idx + 1][4])
+    return pval
 
 
 def compute_index_prediction(
@@ -28,12 +61,15 @@ def compute_index_prediction(
     return index_prediction
 
 
-def evaluate_significance(
+def evaluate_significance_stata(
     df_orig: pd.DataFrame,
     index_predictions: np.ndarray,
-    save_dir: str = "/home/namj/projects/heat_air_epi/mihm/temp",
+    save_dir: str = os.path.join(TEMP_DIR, "data"),
     id: Union[str, None] = None,
 ):
+    init_stata()
+    from pystata import stata
+
     if id is not None:
         save_path = os.path.join(save_dir, f"index_prediction_{id}.dta")
     else:
@@ -62,7 +98,11 @@ def evaluate_significance(
     return interaction_pval, (vif_heat, vif_inter)
 
 
-def draw_margins_plot(data_path: str, fig_dir: str, id: Union[str, None] = None):
+def draw_margins_plot(
+    data_path: str,
+    fig_dir: str = os.path.join(TEMP_DIR, "figures"),
+    id: Union[str, None] = None,
+):
     # load data
     load_cmd = f"use {data_path}, clear"
     stata.run(load_cmd, quietly=True)
@@ -88,7 +128,7 @@ def draw_shapley_summary_plot(
     model_index: IndexPredictionModel,
     all_interaction_vars_tensor: torch.Tensor,
     interaction_predictor_names: Sequence[str],
-    fig_dir: str,
+    fig_dir: str = os.path.join(TEMP_DIR, "figures"),
     id: Union[str, None] = None,
 ):
     explainer = shap.DeepExplainer(model_index, all_interaction_vars_tensor)

@@ -7,14 +7,19 @@ import torch.nn as nn
 import torch.optim as optim
 from mihm.model.mihm import MIHM
 from .eval import evaluate_significance, compute_index_prediction
+from .constants import TEMP_DIR
 import pandas as pd
+import os
+from ray import train
+from ray.train import Checkpoint
+import pickle
+import tempfile
 
 TRAIN_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
 torch.manual_seed(0)
 
 
-def train(
+def train_mihm(
     train_mihm_dataset: MIHMDataset,
     test_mihm_dataset: MIHMDataset,
     hidden_layer_sizes: Sequence[int],
@@ -31,8 +36,9 @@ def train(
     df_orig: Union[None, pd.DataFrame] = None,
     all_interaction_predictors: Union[None, torch.Tensor] = None,
     id: Union[None, str] = None,
+    save_model: bool = False,
+    ray_tune: bool = False,
 ):
-
     # create dataset
     train_dataset = train_mihm_dataset.to_torch_dataset(device=device)
     test_dataset_torch_sample = test_mihm_dataset.to_tensor(device=device)
@@ -83,7 +89,23 @@ def train(
     mseLoss = nn.MSELoss()
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
-    for epoch in range(epochs):
+    # checkpoint
+    if ray_tune:
+        checkpoint = train.get_checkpoint()
+        if checkpoint:
+            with checkpoint.as_directory() as checkpoint_dir:
+                checkpoint_dict = torch.load(
+                    os.path.join(checkpoint_dir, "checkpoint.pt")
+                )
+                start_epoch = checkpoint_dict["epoch"] + 1
+                model.load_state_dict(checkpoint_dict["mihm_state_dict"])
+                optimizer.load_state_dict(checkpoint_dict["optimizer_state_dict"])
+        else:
+            start_epoch = 0
+    else:
+        start_epoch = 0
+
+    for epoch in range(start_epoch, epochs):
         model.train()
         running_loss = 0.0
         for batch_idx, sample in enumerate(dataloader):
@@ -113,7 +135,18 @@ def train(
         # print average loss for epoch
         epoch_loss = running_loss / len(dataloader)
         # evaluation on test set
-        loss_test = test(model, test_dataset_torch_sample)
+        loss_test = test_mihm(model, test_dataset_torch_sample)
+        if ray_tune:
+            report_dict = {"mean_MSE": epoch_loss, "test_MSE": loss_test}
+
+        # save model
+        if save_model:
+            if epoch % 10 == 0:
+                if id is not None:
+                    save_mihm(model, id="{}_{}".format(id, epoch))
+                else:
+                    save_mihm(model, id="{}".format(epoch))
+
         # evaluate on significance
         if eval:
             assert df_orig is not None
@@ -121,18 +154,17 @@ def train(
             index_predictions = compute_index_prediction(
                 model, all_interaction_predictors
             )
-            interaction_pval, vif = evaluate_significance(
-                df_orig, index_predictions, id=id
-            )
+            interaction_pval = evaluate_significance(df_orig, index_predictions)
+            if ray_tune:
+                report_dict["interaction_pval"] = interaction_pval
+                report_dict["composite_metric"] = 10 * interaction_pval + loss_test
             print(
-                "Epoch {}/{} done!; Training Loss: {}; Testing Loss: {}; Interaction Pval: {}; VIF Heat: {}; VIF Interaction: {};".format(
+                "Epoch {}/{} done!; Training Loss: {}; Testing Loss: {}; Interaction Pval: {};".format(
                     epoch + 1,
                     epochs,
                     epoch_loss,
                     loss_test,
                     interaction_pval,
-                    vif[0],
-                    vif[1],
                 )
             )
         else:
@@ -141,10 +173,19 @@ def train(
                     epoch + 1, epochs, epoch_loss, loss_test
                 )
             )
+        if ray_tune:
+            checkpoint_data = {
+                "epoch": epoch,
+                "mihm_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+            }
+            with tempfile.TemporaryDirectory() as tmpdir:
+                torch.save(checkpoint_data, os.path.join(tmpdir, "checkpoint.pt"))
+                train.report(report_dict, checkpoint=Checkpoint.from_directory(tmpdir))
     return model
 
 
-def test(model: MIHM, test_dataset_torch_sample: MIHMDataset):
+def test_mihm(model: MIHM, test_dataset_torch_sample: MIHMDataset):
     model.eval()
     mseLoss = nn.MSELoss()
     with torch.no_grad():
@@ -159,5 +200,14 @@ def test(model: MIHM, test_dataset_torch_sample: MIHMDataset):
     return loss_test.item()
 
 
-def save_model(model: MIHM, path: str):
-    torch.save(model.state_dict(), path)
+def save_mihm(
+    model: MIHM,
+    save_dir: str = os.path.join(TEMP_DIR, "checkpoints"),
+    id: Union[str, None] = None,
+):
+    if id is not None:
+        model_name = os.path.join(save_dir, f"mihm_model_{id}.pt")
+    else:
+        num_files = len([f for f in os.listdir(save_dir) if f.endswith(".pt")])
+        model_name = os.path.join(save_dir, f"mihm_model_{num_files}.pt")
+    torch.save(model.state_dict(), model_name)
