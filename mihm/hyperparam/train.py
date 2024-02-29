@@ -154,10 +154,14 @@ def train_mihm(
             index_predictions = compute_index_prediction(
                 model, all_interaction_predictors
             )
-            interaction_pval = evaluate_significance(df_orig, index_predictions)
+            try:
+                interaction_pval = evaluate_significance(df_orig, index_predictions)
+            except Exception as e:
+                print(e)
+                interaction_pval = 0.1
             if ray_tune:
                 report_dict["interaction_pval"] = interaction_pval
-                report_dict["composite_metric"] = 10 * interaction_pval + loss_test
+                report_dict["composite_metric"] = interaction_pval + loss_test
             print(
                 "Epoch {}/{} done!; Training Loss: {}; Testing Loss: {}; Interaction Pval: {};".format(
                     epoch + 1,

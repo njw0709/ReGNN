@@ -103,6 +103,9 @@ def draw_margins_plot(
     fig_dir: str = os.path.join(TEMP_DIR, "figures"),
     id: Union[str, None] = None,
 ):
+    init_stata()
+    from pystata import stata
+
     # load data
     load_cmd = f"use {data_path}, clear"
     stata.run(load_cmd, quietly=True)

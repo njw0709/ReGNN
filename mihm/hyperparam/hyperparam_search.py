@@ -163,7 +163,7 @@ def train_wrapper(config):
         interaction_predictors,
     )
 
-    print("Mean and std of standardized predictors: ", heat_dataset.mean_std_dict)
+    # print("Mean and std of standardized predictors: ", heat_dataset.mean_std_dict)
     train_idx, test_idx, val_idx = train_test_val_split(len(heat_dataset))
     train_heat_dataset = heat_dataset.get_subset(train_idx)
     test_heat_dataset = heat_dataset.get_subset(test_idx)
@@ -181,7 +181,7 @@ def train_wrapper(config):
         vae=True,
         svd=True,
         k_dims=config["k_dims"],
-        epochs=300,
+        epochs=500,
         batch_size=config["batch_size"],
         lr=config["lr"],
         weight_decay=config["weight_decay"],
