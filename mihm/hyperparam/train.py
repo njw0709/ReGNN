@@ -43,7 +43,12 @@ def train_mihm(
     save_model: bool = False,
     ray_tune: bool = False,
     use_stata: bool = False,
+    return_trajectory: bool = False,
 ):
+
+    if return_trajectory:
+        trajectory_data = []
+    outcome_var = train_mihm_dataset.outcome_original_name
     # create dataset
     train_dataset = train_mihm_dataset.to_torch_dataset(device=device)
     test_dataset_torch_sample = test_mihm_dataset.to_tensor(device=device)
@@ -110,6 +115,35 @@ def train_mihm(
     else:
         start_epoch = 0
 
+    if return_trajectory:
+        traj_epoch = {}
+        traj_epoch["train_loss"] = -1
+        traj_epoch["test_loss"] = -1
+        # initial evaluation
+        if eval:
+            assert df_orig is not None
+            assert all_interaction_predictors is not None
+            index_predictions = compute_index_prediction(
+                model, all_interaction_predictors
+            )
+            try:
+                if use_stata:
+                    interaction_pval, (vif_heat, vif_inter) = (
+                        evaluate_significance_stata(
+                            df_orig, outcome_var, index_predictions, id=id
+                        )
+                    )
+                else:
+                    interaction_pval = evaluate_significance(
+                        df_orig, outcome_var, index_predictions
+                    )
+            except Exception as e:
+                print(e)
+                interaction_pval = 0.1
+            traj_epoch["interaction_pval"] = interaction_pval
+            traj_epoch["index_predictions"] = index_predictions
+        trajectory_data.append(traj_epoch)
+
     for epoch in range(start_epoch, epochs):
         model.train()
         running_loss = 0.0
@@ -141,6 +175,10 @@ def train_mihm(
         epoch_loss = running_loss / len(dataloader)
         # evaluation on test set
         loss_test = test_mihm(model, test_dataset_torch_sample)
+        if return_trajectory:
+            traj_epoch = {}
+            traj_epoch["train_loss"] = epoch_loss
+            traj_epoch["test_loss"] = loss_test
         if ray_tune:
             report_dict = {"mean_MSE": epoch_loss, "test_MSE": loss_test}
 
@@ -162,16 +200,23 @@ def train_mihm(
             try:
                 if use_stata:
                     interaction_pval, (vif_heat, vif_inter) = (
-                        evaluate_significance_stata(df_orig, index_predictions)
+                        evaluate_significance_stata(
+                            df_orig, outcome_var, index_predictions, id=id
+                        )
                     )
                 else:
-                    interaction_pval = evaluate_significance(df_orig, index_predictions)
+                    interaction_pval = evaluate_significance(
+                        df_orig, outcome_var, index_predictions
+                    )
             except Exception as e:
                 print(e)
                 interaction_pval = 0.1
             if ray_tune:
                 report_dict["interaction_pval"] = interaction_pval
                 report_dict["composite_metric"] = interaction_pval + loss_test
+            if return_trajectory:
+                traj_epoch["interaction_pval"] = interaction_pval
+                traj_epoch["index_predictions"] = index_predictions
             print(
                 "Epoch {}/{} done!; Training Loss: {}; Testing Loss: {}; Interaction Pval: {};".format(
                     epoch + 1,
@@ -196,7 +241,13 @@ def train_mihm(
             with tempfile.TemporaryDirectory() as tmpdir:
                 torch.save(checkpoint_data, os.path.join(tmpdir, "checkpoint.pt"))
                 train.report(report_dict, checkpoint=Checkpoint.from_directory(tmpdir))
-    return model
+        if return_trajectory:
+            trajectory_data.append(traj_epoch)
+
+    if return_trajectory:
+        return model, trajectory_data
+    else:
+        return model
 
 
 def test_mihm(model: MIHM, test_dataset_torch_sample: MIHMDataset):

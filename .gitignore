@@ -2,10 +2,15 @@
 *.npy
 *.dta
 *.txt
+*.png
+*.jpg
+*.pt
+*.pkl
 /*.egg-info
 /figures
 /checkpoints
 /code
+/notebooks/archive
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

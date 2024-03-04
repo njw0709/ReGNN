@@ -24,18 +24,21 @@ def init_shap():
 
 def evaluate_significance(
     df_orig: pd.DataFrame,
+    outcome: str,
     index_predictions: np.ndarray,
 ):
     # save to file
     df_orig["vul_index"] = index_predictions
 
     formula_str = """
-    zPCPhenoAge_acc ~ m_HeatIndex_7d + m_HeatIndex_7d:vul_index + pmono
+    {} ~ m_HeatIndex_7d + m_HeatIndex_7d:vul_index + pmono
     + PNK_pct + PBcell_pct + PCD8_Plus_pct + PCD4_Plus_pct + PNCD8_Plus_pct 
     + age2016 + C(female) + C(racethn) + eduy + ihs_wealthf2016 + C(smoke2016) + C(drink2016) 
     + bmi2016 + tractdis + C(urban) + C(mar_cat2) + C(psyche2016) + C(stroke2016) + C(hibpe2016) + C(diabe2016) 
     + C(hearte2016) + dep2016 + ltactx2016 + mdactx2016 + vgactx2016 + C(living2016) + C(division) + adl2016
-    """
+    """.format(
+        outcome
+    )
     formula_str = formula_str.replace("\n", "")
 
     model = smf.ols(formula=formula_str, data=df_orig).fit()
@@ -63,6 +66,7 @@ def compute_index_prediction(
 
 def evaluate_significance_stata(
     df_orig: pd.DataFrame,
+    outcome: str,
     index_predictions: np.ndarray,
     save_dir: str = os.path.join(TEMP_DIR, "data"),
     id: Union[str, None] = None,
@@ -83,7 +87,9 @@ def evaluate_significance_stata(
     # run regression and get significance
     load_cmd = f"use {save_path}, clear"
     stata.run(load_cmd, quietly=True)
-    regress_cmd = "regress zPCPhenoAge_acc m_HeatIndex_7d c.m_HeatIndex_7d#c.vul_index pmono PNK_pct PBcell_pct PCD8_Plus_pct PCD4_Plus_pct PNCD8_Plus_pct age2016 i.female i.racethn eduy ihs_wealthf2016 i.smoke2016 i.drink2016 bmi2016 tractdis i.urban i.mar_cat2 i.psyche2016 i.stroke2016 i.hibpe2016 i.diabe2016 i.hearte2016 dep2016 ltactx2016 mdactx2016 vgactx2016 i.living2016 i.division adl2016"
+    regress_cmd = "regress {} m_HeatIndex_7d c.m_HeatIndex_7d#c.vul_index pmono PNK_pct PBcell_pct PCD8_Plus_pct PCD4_Plus_pct PNCD8_Plus_pct age2016 i.female i.racethn eduy ihs_wealthf2016 i.smoke2016 i.drink2016 bmi2016 tractdis i.urban i.mar_cat2 i.psyche2016 i.stroke2016 i.hibpe2016 i.diabe2016 i.hearte2016 dep2016 ltactx2016 mdactx2016 vgactx2016 i.living2016 i.division adl2016".format(
+        outcome
+    )
     stata.run(regress_cmd, quietly=True)
     regression_results = stata.get_return()
 

@@ -65,7 +65,9 @@ class IndexPredictionModel(nn.Module):
                 interaction_input_vars = F.gelu(layer(interaction_input_vars))
 
         if self.batch_norm:
-            predicted_index = self.bn(torch.unsqueeze(interaction_input_vars, 1))
+            if interaction_input_vars.dim() == 1:
+                interaction_input_vars = torch.unsqueeze(interaction_input_vars, 1)
+            predicted_index = self.bn(interaction_input_vars)
         else:
             predicted_index = interaction_input_vars
 
