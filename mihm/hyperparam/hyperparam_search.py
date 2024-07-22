@@ -188,7 +188,7 @@ def train_wrapper(config):
         eval=True,
         df_orig=df_orig,
         all_interaction_predictors=all_interaction_predictors,
-        id=id,
+        file_id=id,
         save_model=False,
         ray_tune=True,
         use_stata=False,

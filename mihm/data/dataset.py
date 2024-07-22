@@ -145,14 +145,20 @@ class MIHMDataset:
         return f"MIHMDataset with {len(self)} samples"
 
     def get_subset(self, indices: Sequence[int]) -> "MIHMDataset":
-        return MIHMDataset(
+        dataset_subset = MIHMDataset(
             self.df.iloc[indices],
             self.interactor,
             self.controlled_predictors,
             self.interaction_predictors,
             self.outcome,
-            self.mean_std_dict,
+            mean_std_dict=self.mean_std_dict,
         )
+        # set extra attributes
+        all_attrs_new = list(dataset_subset.__dict__.keys())
+        for key, value in self.__dict__.items():
+            if key not in all_attrs_new:
+                setattr(dataset_subset, key, value)
+        return dataset_subset
 
     def to_numpy(self, dtype=np.float32):
         item_dict = {

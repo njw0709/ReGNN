@@ -243,7 +243,7 @@ model, traj_data = train_mihm(
     eval=eval,
     df_orig=df_orig,
     all_interaction_predictors=all_interaction_predictors,
-    id=0,
+    file_id=0,
     use_stata=True,
     return_trajectory=True,
 )

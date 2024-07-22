@@ -98,8 +98,7 @@ class IndexPredictionModel(nn.Module):
 
         if self.batch_norm:
             predicted_index = self.bn(torch.unsqueeze(mu, 1))
-            total_var = logvar + torch.log(self.bn.running_var)
-            std = torch.unsqueeze(torch.exp(total_var / 2), 1)
+            std = torch.unsqueeze(torch.exp(logvar / 2), 1)
         else:
             predicted_index = mu
             std = torch.exp(logvar / 2)
@@ -149,6 +148,10 @@ class MIHM(nn.Module):
             self.k_dim = k_dim
             if device == "cuda":
                 self.svd_matrix = self.svd_matrix.cuda()
+        else:
+            self.svd_matrix = None
+            self.k_dim = None
+
         self.svd = svd
 
         layer_input_sizes = [interaction_var_size] + hidden_layer_sizes
@@ -234,7 +237,7 @@ class MIHM(nn.Module):
                 * predicted_index  # interaction predictors included as main term
             )
         if self.return_logvar:
-            return predicted_epi, logvar
+            return predicted_epi, mu, logvar
         else:
             return predicted_epi
 

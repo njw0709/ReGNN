@@ -6,6 +6,7 @@ from typing import Sequence, Union
 import torch.nn as nn
 import torch.optim as optim
 from mihm.model.mihm import MIHM
+from mihm.model.custom_loss import var_adjusted_mse_loss, vae_kld_regularized_loss
 from .eval import (
     evaluate_significance,
     compute_index_prediction,
@@ -39,11 +40,14 @@ def train_mihm(
     eval: bool = False,
     df_orig: Union[None, pd.DataFrame] = None,
     all_interaction_predictors: Union[None, torch.Tensor] = None,
-    id: Union[None, str] = None,
+    file_id: Union[None, str] = None,
     save_model: bool = False,
     ray_tune: bool = False,
     use_stata: bool = False,
     return_trajectory: bool = False,
+    vae_loss: bool = False,
+    vae_lambda: float = 0.1,
+    dropout: float = 0.1,
 ):
 
     if return_trajectory:
@@ -77,6 +81,7 @@ def train_mihm(
             concatenate_interaction_vars=True,
             batch_norm=True,
             vae=vae,
+            dropout=dropout,
             device=device,
         )
     else:
@@ -96,7 +101,10 @@ def train_mihm(
         model.cuda()
 
     # setup loss and optimizer
-    mseLoss = nn.MSELoss()
+    if vae_loss:
+        lossFunc = vae_kld_regularized_loss(lambda_reg=vae_lambda)
+    else:
+        lossFunc = nn.MSELoss()
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     # checkpoint
@@ -121,41 +129,33 @@ def train_mihm(
         traj_epoch["test_loss"] = -1
         # initial evaluation
         if eval:
-            assert df_orig is not None
-            assert all_interaction_predictors is not None
-            index_predictions = compute_index_prediction(
-                model, all_interaction_predictors
+            interaction_pval = eval_mihm(
+                model, test_mihm_dataset, df_orig, use_stata=use_stata, file_id=file_id
             )
-            try:
-                if use_stata:
-                    interaction_pval, (vif_heat, vif_inter) = (
-                        evaluate_significance_stata(
-                            df_orig, outcome_var, index_predictions, id=id
-                        )
-                    )
-                else:
-                    interaction_pval = evaluate_significance(
-                        df_orig, outcome_var, index_predictions
-                    )
-            except Exception as e:
-                print(e)
-                interaction_pval = 0.1
             traj_epoch["interaction_pval"] = interaction_pval
-            traj_epoch["index_predictions"] = index_predictions
         trajectory_data.append(traj_epoch)
 
     for epoch in range(start_epoch, epochs):
         model.train()
+        if vae_loss:
+            model.return_logvar = True
         running_loss = 0.0
         for batch_idx, sample in enumerate(dataloader):
             optimizer.zero_grad()
             # forward pass
             if model.vae:
-                predicted_epi = model(
-                    sample["interaction_predictors"],
-                    sample["interactor"],
-                    sample["controlled_predictors"],
-                )
+                if vae_loss:
+                    predicted_epi, mu, logvar = model(
+                        sample["interaction_predictors"],
+                        sample["interactor"],
+                        sample["controlled_predictors"],
+                    )
+                else:
+                    predicted_epi = model(
+                        sample["interaction_predictors"],
+                        sample["interactor"],
+                        sample["controlled_predictors"],
+                    )
             else:
                 predicted_epi = model(
                     sample["interaction_predictors"],
@@ -163,8 +163,10 @@ def train_mihm(
                     sample["controlled_predictors"],
                 )
             label = torch.unsqueeze(sample["outcome"], 1)
-            # loss = var_adjusted_mse_loss(predicted_epi, label, logvar, lambda_reg=0.1)
-            loss = mseLoss(predicted_epi, label)
+            if vae_loss:
+                loss = lossFunc(predicted_epi, label, mu, logvar)
+            else:
+                loss = lossFunc(predicted_epi, label)
             # backward pass
             loss.backward()
             optimizer.step()
@@ -185,38 +187,22 @@ def train_mihm(
         # save model
         if save_model:
             if epoch % 10 == 0:
-                if id is not None:
-                    save_mihm(model, id="{}_{}".format(id, epoch))
+                if file_id is not None:
+                    save_mihm(model, id="{}_{}".format(file_id, epoch))
                 else:
                     save_mihm(model, id="{}".format(epoch))
 
         # evaluate on significance
         if eval:
-            assert df_orig is not None
-            assert all_interaction_predictors is not None
-            index_predictions = compute_index_prediction(
-                model, all_interaction_predictors
+            interaction_pval = eval_mihm(
+                model, test_mihm_dataset, df_orig, use_stata=use_stata, file_id=file_id
             )
-            try:
-                if use_stata:
-                    interaction_pval, (vif_heat, vif_inter) = (
-                        evaluate_significance_stata(
-                            df_orig, outcome_var, index_predictions, id=id
-                        )
-                    )
-                else:
-                    interaction_pval = evaluate_significance(
-                        df_orig, outcome_var, index_predictions
-                    )
-            except Exception as e:
-                print(e)
-                interaction_pval = 0.1
             if ray_tune:
                 report_dict["interaction_pval"] = interaction_pval
                 report_dict["composite_metric"] = interaction_pval + loss_test
             if return_trajectory:
                 traj_epoch["interaction_pval"] = interaction_pval
-                traj_epoch["index_predictions"] = index_predictions
+                # traj_epoch["index_predictions"] = index_predictions
             print(
                 "Epoch {}/{} done!; Training Loss: {}; Testing Loss: {}; Interaction Pval: {};".format(
                     epoch + 1,
@@ -250,9 +236,42 @@ def train_mihm(
         return model
 
 
+def eval_mihm(
+    model: MIHM,
+    test_mihm_dataset: MIHMDataset,
+    df_orig,
+    use_stata: bool = True,
+    file_id: Union[str, None] = None,
+):
+    test_interaction_predictors = test_mihm_dataset.to_tensor(device="cuda")[
+        "interaction_predictors"
+    ]
+    outcome_var = test_mihm_dataset.outcome_original_name
+    index_predictions = compute_index_prediction(model, test_interaction_predictors)
+    try:
+        if use_stata:
+            interaction_pval, _ = evaluate_significance_stata(
+                df_orig.iloc[test_mihm_dataset.df.index].copy(),
+                outcome_var,
+                index_predictions,
+                id=file_id,
+            )
+        else:
+            interaction_pval = evaluate_significance(
+                df_orig.iloc[test_mihm_dataset.df.index].copy(),
+                outcome_var,
+                index_predictions,
+            )
+    except Exception as e:
+        print(e)
+        interaction_pval = 0.1
+    return interaction_pval
+
+
 def test_mihm(model: MIHM, test_dataset_torch_sample: MIHMDataset):
     model.eval()
     mseLoss = nn.MSELoss()
+    model.return_logvar = False
     with torch.no_grad():
         predicted_epi = model(
             test_dataset_torch_sample["interaction_predictors"],
@@ -262,6 +281,7 @@ def test_mihm(model: MIHM, test_dataset_torch_sample: MIHMDataset):
         loss_test = mseLoss(
             predicted_epi, torch.unsqueeze(test_dataset_torch_sample["outcome"], 1)
         )
+
     return loss_test.item()
 
 

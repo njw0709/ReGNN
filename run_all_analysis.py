@@ -233,6 +233,10 @@ all_interaction_predictors = heat_dataset.to_tensor(device="cuda")[
 ]
 model_name = outcome_original_name
 
+model = torch.load(
+    "/home/namj/projects/heat_air_epi/notebooks/Mar1_2024_traj_results/model_PC_age.pt"
+)
+
 # # %%
 # model, traj_data = train_mihm(
 #     train_heat_dataset,
@@ -315,9 +319,6 @@ from mihm.model.modelutils import get_index_prediction_weights
 import matplotlib.pyplot as plt
 import torch
 
-model = torch.load(
-    "/home/namj/projects/heat_air_epi/notebooks/Mar1_2024_traj_results/model_PC_age.pt"
-)
 
 # %%
 model_index = model.get_index_prediction_model()
