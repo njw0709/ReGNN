@@ -240,7 +240,7 @@ model, traj_data = train_mihm(
     lr,
     weight_decay,
     shuffle=shuffle,
-    eval=eval,
+    evaluate=eval,
     df_orig=df_orig,
     all_interaction_predictors=all_interaction_predictors,
     file_id=0,

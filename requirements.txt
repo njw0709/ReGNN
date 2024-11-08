@@ -1,4 +1,10 @@
-shap==0.44.0
 torch
 pandas
-prince
+artemis
+scikit-learn
+numpy
+pyro-ppl
+stata-setup
+ray
+alibi
+matplotlib

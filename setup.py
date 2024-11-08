@@ -6,7 +6,18 @@ with open("README.md") as file:
 
 
 # specify requirements of your package here
-REQUIREMENTS = ["shap", "pandas", "torch"]
+REQUIREMENTS = [
+    "torch",
+    "pandas",
+    "artemis",
+    "scikit-learn",
+    "numpy",
+    "pyro-ppl",
+    "stata-setup",
+    "ray",
+    "alibi",
+    "matplotlib",
+]
 
 # some more details
 CLASSIFIERS = [
@@ -20,14 +31,11 @@ CLASSIFIERS = [
 setuptools.setup(
     name="mihm",
     version="0.0.1",
-    description="hybrid-NN-linear regression model to get interactions effect",
+    description="hybrid-NN-linear regression model that captures all-way interactions",
     long_description=long_description,
-    # url="https://github.com/njw0709/ShapeYV2",
-    author="Jong Woo Nam",
-    author_email="namj@usc.edu",
     license="MIT",
     packages=setuptools.find_packages(),
     classifiers=CLASSIFIERS,
     install_requires=REQUIREMENTS,
-    keywords="interactions effect, hybrid model, shap, pytorch, linear regression, neural network",
+    keywords="interactions effect, hybrid model, shap, pytorch, linear regression, neural network, explainable AI",
 )

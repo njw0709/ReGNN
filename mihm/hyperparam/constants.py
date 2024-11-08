@@ -1,1 +1,3 @@
-TEMP_DIR = "/home/namj/projects/heat_air_epi/mihm/temp"
+import os
+CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMP_DIR = os.path.join(CURRENT_FILE_DIR, "../temp")

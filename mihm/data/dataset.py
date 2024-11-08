@@ -13,16 +13,18 @@ class MIHMDataset:
         df: pd.DataFrame,
         interactor: str,
         controlled_predictors: Sequence[str],
-        interaction_predictors: Sequence[str],
+        interaction_predictors: Union[Sequence[str], Sequence[Sequence[str]]],
         outcome: str,
+        survey_weights: Union[str, None] = None,
         mean_std_dict: dict = {},
     ) -> None:
         self.df: pd.DataFrame = df
         self.columns: list = df.columns.tolist()
         self.interactor: str = interactor
         self.controlled_predictors: Sequence[str] = controlled_predictors
-        self.interaction_predictors: Sequence[str] = interaction_predictors
+        self.interaction_predictors: Union[Sequence[str], Sequence[Sequence[str]]] = interaction_predictors
         self.outcome: str = outcome
+        self.survey_weights: Union[str, None] = survey_weights
         self.mean_std_dict: dict = {}
 
     def __len__(self) -> int:
@@ -35,7 +37,14 @@ class MIHMDataset:
     ):
         df_temp = self.df.copy()
         for colnames, preprocess in preprocess_list:
-            df_temp = preprocess(df_temp, colnames)
+            df_temp, new_colnames = preprocess(df_temp, colnames)
+            if set(new_colnames) != set(colnames):
+                for c in colnames:
+                    lists_to_check = [self.controlled_predictors, self.interaction_predictors]
+                    for current_list in lists_to_check:
+                        if c in current_list:
+                            current_list.remove(c)
+                            current_list.extend([new_c for new_c in new_colnames if c in new_c])                          
         if inplace:
             self.df = df_temp
             return df_temp
@@ -133,12 +142,28 @@ class MIHMDataset:
             return self.df.dropna()
 
     def __getitem__(self, idx: int):
-        item_dict = {
-            "interactor": self.df[self.interactor].iloc[idx].to_numpy(),
-            "controlled": self.df[self.controlled_predictors].iloc[idx].to_numpy(),
-            "interaction": self.df[self.interaction_predictors].iloc[idx].to_numpy(),
-            "outcome": self.df[self.outcome].iloc[idx].to_numpy(),
-        }
+        if isinstance(self.interaction_predictors[0], str):
+            item_dict = {
+                "interactor": self.df[self.interactor].iloc[idx].to_numpy(),
+                "controlled": self.df[self.controlled_predictors].iloc[idx].to_numpy(),
+                "interaction": self.df[self.interaction_predictors].iloc[idx].to_numpy(),
+                "outcome": self.df[self.outcome].iloc[idx].to_numpy(),
+                # "weights": self.df[self.survey_weights].iloc[idx].to_numpy(),
+            }
+        elif isinstance(self.interaction_predictors[0], list):
+            item_dict = {
+                "interactor": self.df[self.interactor].iloc[idx].to_numpy(),
+                "controlled": self.df[self.controlled_predictors].iloc[idx].to_numpy(),
+                "interaction": [self.df[i_p].iloc[idx].to_numpy() for i_p in self.interaction_predictors],
+                "outcome": self.df[self.outcome].iloc[idx].to_numpy(),
+                # "weights": self.df[self.survey_weights].iloc[idx].to_numpy(),
+            }
+        else:
+            raise TypeError("moderator must either be string or list of strings")
+
+        if self.survey_weights is not None:
+            item_dict["weights"] = self.df[self.survey_weights].iloc[idx].to_numpy()
+
         return item_dict
 
     def __repr__(self):
@@ -151,6 +176,7 @@ class MIHMDataset:
             self.controlled_predictors,
             self.interaction_predictors,
             self.outcome,
+            self.survey_weights,
             mean_std_dict=self.mean_std_dict,
         )
         # set extra attributes
@@ -161,47 +187,103 @@ class MIHMDataset:
         return dataset_subset
 
     def to_numpy(self, dtype=np.float32):
-        item_dict = {
-            "interactor": self.df[self.interactor].to_numpy().astype(dtype),
-            "controlled_predictors": self.df[self.controlled_predictors]
-            .to_numpy()
-            .astype(dtype),
-            "interaction_predictors": self.df[self.interaction_predictors]
-            .to_numpy()
-            .astype(dtype),
-            "outcome": self.df[self.outcome].to_numpy().astype(dtype),
-        }
+        if isinstance(self.interaction_predictors[0], str):
+            item_dict = {
+                "interactor": self.df[self.interactor].to_numpy().astype(dtype),
+                "controlled_predictors": self.df[self.controlled_predictors]
+                .to_numpy()
+                .astype(dtype),
+                "interaction_predictors": self.df[self.interaction_predictors]
+                .to_numpy()
+                .astype(dtype),
+                "outcome": self.df[self.outcome].to_numpy().astype(dtype),
+                # "weights": self.df[self.survey_weights].to_numpy().astype(dtype)
+            }
+        elif isinstance(self.interaction_predictors[0], list):
+            item_dict = {
+                "interactor": self.df[self.interactor].to_numpy().astype(dtype),
+                "controlled_predictors": self.df[self.controlled_predictors]
+                .to_numpy()
+                .astype(dtype),
+                "interaction_predictors": [self.df[i_p]
+                .to_numpy() 
+                .astype(dtype) for i_p in self.interaction_predictors],
+                "outcome": self.df[self.outcome].to_numpy().astype(dtype),
+                # "weights": self.df[self.survey_weights].to_numpy().astype(dtype)
+            }
+        else:
+            raise TypeError()
+        if self.survey_weights is not None:
+            item_dict["weights"] = self.df[self.survey_weights].to_numpy().astype(dtype)
         return item_dict
 
     def to_tensor(self, dtype=torch.float32, device="cpu"):
-        item_dict = {
-            "interactor": torch.tensor(
-                self.df[self.interactor].to_numpy(), dtype=dtype
-            ).to(device),
-            "controlled_predictors": torch.tensor(
-                self.df[self.controlled_predictors].to_numpy(), dtype=dtype
-            ).to(device),
-            "interaction_predictors": torch.tensor(
-                self.df[self.interaction_predictors].to_numpy(), dtype=dtype
-            ).to(device),
-            "outcome": torch.tensor(self.df[self.outcome].to_numpy(), dtype=dtype).to(
-                device
-            ),
-        }
+        if isinstance(self.interaction_predictors[0], str):
+            item_dict = {
+                "interactor": torch.tensor(
+                    self.df[self.interactor].to_numpy(), dtype=dtype
+                ).to(device),
+                "controlled_predictors": torch.tensor(
+                    self.df[self.controlled_predictors].to_numpy(), dtype=dtype
+                ).to(device),
+                "interaction_predictors": torch.tensor(
+                    self.df[self.interaction_predictors].to_numpy(), dtype=dtype
+                ).to(device),
+                "outcome": torch.tensor(self.df[self.outcome].to_numpy(), dtype=dtype).to(
+                    device
+                ),
+                # "weights": torch.tensor(self.df[self.survey_weights].to_numpy(), dtype=dtype).to(device)
+            }
+        elif isinstance(self.interaction_predictors[0], list):
+            item_dict = {
+                "interactor": torch.tensor(
+                    self.df[self.interactor].to_numpy(), dtype=dtype
+                ).to(device),
+                "controlled_predictors": torch.tensor(
+                    self.df[self.controlled_predictors].to_numpy(), dtype=dtype
+                ).to(device),
+                "interaction_predictors": [torch.tensor(
+                    self.df[i_p].to_numpy(), dtype=dtype
+                ).to(device) for i_p in self.interaction_predictors],
+                "outcome": torch.tensor(self.df[self.outcome].to_numpy(), dtype=dtype).to(
+                    device
+                ),
+                # "weights": torch.tensor(self.df[self.survey_weights].to_numpy(), dtype=dtype).to(device)
+            }
+        else:
+            raise TypeError()
+        if self.survey_weights is not None:
+            item_dict["weights"] = torch.tensor(self.df[self.survey_weights].to_numpy(), dtype=dtype).to(device)
         return item_dict
 
     def get_column_index(self, colname: str):
         return self.columns.index(colname)
 
     def to_torch_dataset(self, device="cpu"):
-        return TorchMIHMDataset(
-            self.df[self.interactor].to_numpy(),
-            self.df[self.controlled_predictors].to_numpy(),
-            self.df[self.interaction_predictors].to_numpy(),
-            self.df[self.outcome].to_numpy(),
-            device=device,
-        )
-
+        if self.survey_weights is not None:
+            weights = self.df[self.survey_weights].to_numpy()
+        else:
+            weights = None
+        if isinstance(self.interaction_predictors[0], str):
+            return TorchMIHMDataset(
+                self.df[self.interactor].to_numpy(),
+                self.df[self.controlled_predictors].to_numpy(),
+                self.df[self.interaction_predictors].to_numpy(),
+                self.df[self.outcome].to_numpy(),
+                weights,
+                device=device,
+            )
+        elif isinstance(self.interaction_predictors[0], list):
+            return TorchMIHMDataset(
+                self.df[self.interactor].to_numpy(),
+                self.df[self.controlled_predictors].to_numpy(),
+                [self.df[i_p].to_numpy() for i_p in self.interaction_predictors],
+                self.df[self.outcome].to_numpy(),
+                weights,
+                device=device,
+            )
+        else:
+            raise TypeError()
 
 class TorchMIHMDataset(Dataset):
     def __init__(
@@ -210,12 +292,20 @@ class TorchMIHMDataset(Dataset):
         controlled_vars,
         interaction_input_vars,
         label,
+        weights: Union[np.ndarray, None] = None,
         device="cpu",
     ):
         self.interactor_var = interactor_var.astype(np.float32)
         self.controlled_vars = controlled_vars.astype(np.float32)
-        self.interaction_input_vars = interaction_input_vars.astype(np.float32)
+        if isinstance(interaction_input_vars, list):
+            self.interaction_input_vars = [i_p.astype(np.float32) for i_p in interaction_input_vars]
+        else:
+            self.interaction_input_vars = interaction_input_vars.astype(np.float32)
         self.label = label.astype(np.float32)
+        if weights is not None:
+            self.weights = weights.astype(np.float32)
+        else:
+            self.weights = None
         self.device = device
 
     def __len__(self):
@@ -224,15 +314,30 @@ class TorchMIHMDataset(Dataset):
     def __getitem__(self, index):
         if torch.is_tensor(index):
             index = index.to_list()
-
-        sample = {
-            "interactor": torch.tensor(self.interactor_var[index]).to(self.device),
-            "controlled_predictors": torch.from_numpy(
-                self.controlled_vars[index, :]
-            ).to(self.device),
-            "interaction_predictors": torch.from_numpy(
-                self.interaction_input_vars[index, :]
-            ).to(self.device),
-            "outcome": torch.tensor(self.label[index]).to(self.device),
-        }
+        if isinstance(self.interaction_input_vars, list):
+            sample = {
+                "interactor": torch.tensor(self.interactor_var[index]).to(self.device),
+                "controlled_predictors": torch.from_numpy(
+                    self.controlled_vars[index, :]
+                ).to(self.device),
+                "interaction_predictors": [torch.from_numpy(
+                    i_p[index, :]
+                ).to(self.device) for i_p in self.interaction_input_vars],
+                "outcome": torch.tensor(self.label[index]).to(self.device),
+                # "weights": torch.tensor(self.weights[index]).to(self.device)
+            }
+        else:
+            sample = {
+                "interactor": torch.tensor(self.interactor_var[index]).to(self.device),
+                "controlled_predictors": torch.from_numpy(
+                    self.controlled_vars[index, :]
+                ).to(self.device),
+                "interaction_predictors": torch.from_numpy(
+                    self.interaction_input_vars[index, :]
+                ).to(self.device),
+                "outcome": torch.tensor(self.label[index]).to(self.device),
+                # "weights": torch.tensor(self.weights[index]).to(self.device)
+            }
+        if self.weights is not None:
+            sample["weights"] = torch.tensor(self.weights[index]).to(self.device)
         return sample

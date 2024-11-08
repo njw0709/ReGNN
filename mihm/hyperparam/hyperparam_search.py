@@ -185,7 +185,7 @@ def train_wrapper(config):
         batch_size=config["batch_size"],
         lr=config["lr"],
         weight_decay=0.1,
-        eval=True,
+        evaluate=True,
         df_orig=df_orig,
         all_interaction_predictors=all_interaction_predictors,
         file_id=id,
