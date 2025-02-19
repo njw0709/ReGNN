@@ -4,7 +4,7 @@ from ..data.process import (
     binary_to_one_hot,
     standardize_cols,
     convert_categorical_to_ordinal,
-    map_to_zero_one
+    map_to_zero_one,
 )
 from ..data.dataset import MIHMDataset
 from typing import List, Sequence, Tuple, Union
@@ -34,7 +34,8 @@ def preprocess(
     # get binary and multi category columns
     for c in categorical_cols:
         df[c] = df[c].astype("category")
-    for c in categorical_cols:
+
+    for c in binary_cols:
         df[c] = df[c].astype("category")
 
     # make MIHM dataset
@@ -58,4 +59,3 @@ def preprocess(
     heat_dataset.dropna(inplace=True)
 
     return df_orig, heat_dataset
-

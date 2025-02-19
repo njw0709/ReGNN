@@ -7,7 +7,6 @@ import torch.optim as optim
 from mihm.model.mihm import MIHM
 from mihm.model.custom_loss import vae_kld_regularized_loss, elasticnet_loss, lasso_loss
 from .eval import (
-    evaluate_significance,
     compute_index_prediction,
     evaluate_significance_stata,
 )
@@ -15,6 +14,7 @@ from .constants import TEMP_DIR
 import pandas as pd
 import os
 import traceback
+import numpy as np
 
 TRAIN_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # TRAIN_DEVICE = "cpu"
@@ -84,6 +84,7 @@ def train_mihm(
     early_stop: bool = True,
     early_stop_criterion: float = 0.01,
     stop_after: int = 100,
+    save_intermediate_index: bool = False,
 ):
 
     if return_trajectory:
@@ -207,6 +208,9 @@ def train_mihm(
                 )
         trajectory_data.append(traj_epoch)
 
+    if save_intermediate_index:
+        intermediate_indices = []
+
     for epoch in range(start_epoch, epochs):
         model.train()
         l2_lengths = []
@@ -255,6 +259,15 @@ def train_mihm(
                 l2_lengths.append(l2)
             optimizer.step()
             running_loss += loss.item()
+            # save intermediate index
+            if save_intermediate_index:
+                interaction_predictors = all_heat_dataset.to_tensor(
+                    device=TRAIN_DEVICE
+                )["interaction_predictors"]
+                index_prediction = compute_index_prediction(
+                    model, interaction_predictors
+                )
+                intermediate_indices.append(index_prediction)
         # scheduler.step()
 
         # print average loss for epoch
@@ -376,6 +389,12 @@ def train_mihm(
         )
         print(final_summary)
 
+    # save out intermediate predictions
+    if save_intermediate_index:
+        intermediate_indices = np.hstack(intermediate_indices)
+        df = pd.DataFrame(intermediate_indices)
+        df.to_stata("/home/namj/projects/mihm/notebooks/indices.dta")
+
     if return_trajectory:
         return model, trajectory_data
     else:
@@ -414,11 +433,8 @@ def eval_mihm(
                 )
             )
         else:
-            interaction_pval = evaluate_significance(
-                df_orig.iloc[test_mihm_dataset.df.index].copy(),
-                regress_cmd,
-                index_predictions,
-            )
+            raise NotImplementedError
+
     except Exception as e:
         print(e)
         print(traceback.format_exc())
