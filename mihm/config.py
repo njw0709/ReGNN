@@ -15,6 +15,7 @@ class MLPConfig(BaseModel):
         False, description="Whether to output mean and variance"
     )
     ensemble: bool = Field(False, description="Whether to use ensemble of models")
+    n_ensemble: int = Field(1, ge=1, description="Number of ensemble models")
 
     @field_validator("layer_input_sizes")
     def validate_layer_sizes(cls, v):
@@ -22,8 +23,13 @@ class MLPConfig(BaseModel):
             raise ValueError("Must have at least input and output layers")
         return v
 
-    class Config:
-        arbitrary_types_allowed = True
+    @field_validator("n_ensemble")
+    def validate_n_ensemble(cls, v, values):
+        if values.get("ensemble", False) and v <= 1:
+            raise ValueError("n_ensemble must be greater than 1 when ensemble=True")
+        return v
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class IndexPredictionConfig(BaseModel):
@@ -52,8 +58,7 @@ class IndexPredictionConfig(BaseModel):
                 raise ValueError("k_dim required when svd=True")
         return v
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class ReGNNConfig(BaseModel):
@@ -109,5 +114,4 @@ class ReGNNConfig(BaseModel):
                         raise ValueError(f"k_dim[{i}] must be <= num_moderators[{i}]")
         return v
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = {"arbitrary_types_allowed": True}
