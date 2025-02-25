@@ -1,0 +1,13 @@
+[project]
+name = "regnn"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["torch", "pandas", "artemis", "scikit-learn", "numpy", "stata-setup", "ray", "alibi", "matplotlib", "pytest"]
+
+[project.optional-dependencies]
+data = ["pandas", "numpy", "scikit-learn"]
+model = ["torch", "alibi"]
+graphing = ["matplotlib"]
+all = ["torch", "pandas", "artemis", "scikit-learn", "numpy", "stata-setup", "ray", "alibi", "matplotlib", "pytest"]
