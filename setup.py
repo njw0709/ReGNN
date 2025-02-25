@@ -17,6 +17,7 @@ REQUIREMENTS = [
     "ray",
     "alibi",
     "matplotlib",
+    "pytest",
 ]
 
 # some more details

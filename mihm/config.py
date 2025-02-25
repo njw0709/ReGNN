@@ -51,9 +51,21 @@ class IndexPredictionConfig(BaseModel):
     n_ensemble: int = Field(1, ge=1, description="Number of ensemble models")
     output_mu_var: bool = Field(True, description="Whether to output mean and variance")
 
+    @field_validator("hidden_layer_sizes")
+    def validate_hidden_layer_sizes(cls, v):
+        if isinstance(v, list):
+            if isinstance(v[0], list):
+                for hidden_layer_sizes in v:
+                    if hidden_layer_sizes[-1] != 1:
+                        raise ValueError("Last layer of hidden_layer_sizes must be 1")
+            else:
+                if v[-1] != 1:
+                    raise ValueError("Last layer of hidden_layer_sizes must be 1")
+        return v
+
     @field_validator("k_dim")
     def validate_k_dim(cls, v, values):
-        if values.get("svd", False):
+        if values.data.get("svd", False):
             if v is None:
                 raise ValueError("k_dim required when svd=True")
         return v
@@ -87,8 +99,10 @@ class ReGNNConfig(BaseModel):
     device: str = Field("cpu", description="Device to run model on")
     control_moderators: bool = Field(False, description="Whether to control moderators")
     batch_norm: bool = Field(True, description="Whether to use batch normalization")
-    vae: bool = Field(True, description="Whether to use variational autoencoder")
-    output_mu_var: bool = Field(True, description="Whether to output mean and variance")
+    vae: bool = Field(False, description="Whether to use variational autoencoder")
+    output_mu_var: bool = Field(
+        False, description="Whether to output mean and variance"
+    )
     interaction_direction: str = Field(
         "positive", description="Direction of interaction effect"
     )
@@ -100,12 +114,24 @@ class ReGNNConfig(BaseModel):
             raise ValueError("interaction_direction must be 'positive' or 'negative'")
         return v
 
+    @field_validator("hidden_layer_sizes")
+    def validate_hidden_layer_sizes(cls, v):
+        if isinstance(v, list):
+            if isinstance(v[0], list):
+                for hidden_layer_sizes in v:
+                    if hidden_layer_sizes[-1] != 1:
+                        raise ValueError("Last layer of hidden_layer_sizes must be 1")
+            else:
+                if v[-1] != 1:
+                    raise ValueError("Last layer of hidden_layer_sizes must be 1")
+        return v
+
     @field_validator("k_dim")
     def validate_k_dim(cls, v, values):
         if values.data.get("svd", False):
             if v is None:
                 raise ValueError("k_dim required when svd=True")
-            if isinstance(values.data.get("num_moderators"), int):
+            if isinstance(values.data["num_moderators"], int):
                 if v > values.data["num_moderators"]:
                     raise ValueError("k_dim must be <= num_moderators")
             else:

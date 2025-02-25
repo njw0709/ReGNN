@@ -196,17 +196,20 @@ class IndexPredictionModel(nn.Module):
             # For single model, use the last hidden layer size
             if self.num_models == 1:
                 num_features = hidden_layer_sizes[-1]
+                self.bn = nn.BatchNorm1d(num_features, affine=False)
             # For multiple models, sum the last hidden layer sizes
             else:
-                num_features = sum(hs[-1] for hs in hidden_layer_sizes)
-            self.bn = nn.BatchNorm1d(num_features, affine=False)
+                self.bns = nn.ModuleList()
+                for hs in hidden_layer_sizes:
+                    num_features = hs[-1]
+                    self.bns.append(nn.BatchNorm1d(num_features, affine=False))
 
         if svd:
             assert svd_matrix is not None
             if isinstance(num_moderators, list):
                 for i in range(self.num_models):
                     assert k_dim[i] <= num_moderators[i]
-                    num_moderators[i][0] = k_dim[i]
+                    num_moderators[i] = k_dim[i]
                 if not isinstance(svd_matrix[0], torch.Tensor):
                     if device == "cuda":
                         svd_matrix = [torch.Tensor(m).cuda() for m in svd_matrix]
@@ -310,11 +313,21 @@ class IndexPredictionModel(nn.Module):
                         mods = outputs
             else:
                 mods = outputs
-            moderators = torch.cat(mods, 1)
+            moderators = mods
         if self.batch_norm:
-            if moderators.dim() == 1:
-                moderators = torch.unsqueeze(moderators, 1)
-            predicted_index = self.bn(moderators)
+            if isinstance(moderators, list):
+                # Apply batch norm to each mod separately
+                normed_mods = []
+                for i, mod in enumerate(moderators):
+                    if mod.dim() == 1:
+                        mod = torch.unsqueeze(mod, 1)
+                    normed_mods.append(self.bns[i](mod))
+                moderators = normed_mods  # return the list of batch-normalized tensors
+                predicted_index = moderators
+            else:
+                if moderators.dim() == 1:
+                    moderators = torch.unsqueeze(moderators, 1)
+                predicted_index = self.bn(moderators)
         else:
             predicted_index = moderators
         if self.vae:
@@ -458,42 +471,24 @@ class ReGNN(nn.Module):
             focal_predictor = torch.unsqueeze(focal_predictor, 1)
 
         # Calculate interaction term based on number of models
-        if self.num_models == 1:
-            if self.interaction_direction == "positive":
-                predicted_interaction_term = (
-                    torch.abs(self.predicted_index_weight)
-                    * focal_predictor
-                    * predicted_index
-                )
-            else:  # negative
-                predicted_interaction_term = -1.0 * (
-                    torch.abs(self.predicted_index_weight)
-                    * focal_predictor
-                    * predicted_index
-                )
+        if isinstance(predicted_index, list):
+            predicted_index = torch.stack(
+                predicted_index
+            )  # Shape: (num_models, batch_size, 1)
+            predicted_index_weight = torch.abs(self.predicted_index_weight).reshape(
+                self.predicted_index_weight.shape[1], 1, 1
+            )  # Shape: (num_models, 1, 1)
+            predicted_interaction_term = (predicted_index_weight * predicted_index).sum(
+                dim=0
+            )  # Shape: (batch_size, 1)
         else:
-            # Split predicted_index into chunks for each model
-            splits = [hs[-1] for hs in self.hidden_layer_sizes]
-            model_outputs = torch.split(predicted_index, splits, dim=1)
-
-            # Multiply each output with its weight and sum
-            weighted_sum = sum(
-                w * out
-                for w, out in zip(
-                    torch.abs(self.predicted_index_weight).split(1, dim=1),
-                    model_outputs,
-                )
+            predicted_interaction_term = (
+                torch.abs(self.predicted_index_weight) * predicted_index
             )
+        predicted_interaction_term = predicted_interaction_term * focal_predictor
 
-            # Apply interaction direction and multiply with focal predictor
-            if self.interaction_direction == "positive":
-                predicted_interaction_term = focal_predictor * weighted_sum
-            elif self.interaction_direction == "negative":
-                predicted_interaction_term = -1.0 * focal_predictor * weighted_sum
-            else:
-                raise ValueError(
-                    "interaction direction must be either positive or negative!!!"
-                )
+        if self.interaction_direction != "positive":
+            predicted_interaction_term = -1.0 * predicted_interaction_term
 
         focal_predictor_main_effect = self.focal_predictor_main_weight * focal_predictor
 
