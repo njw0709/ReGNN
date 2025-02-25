@@ -1,8 +1,8 @@
 import pytest
 import torch
 import numpy as np
-from mihm.config import ReGNNConfig
-from mihm.model.mihm import ReGNN
+from regnn.config import ReGNNConfig
+from regnn.model.mihm import ReGNN
 
 
 def test_re_gnn_creation_basic():

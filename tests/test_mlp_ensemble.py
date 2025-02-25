@@ -1,7 +1,7 @@
 import pytest
 import torch
-from mihm.config import MLPConfig
-from mihm.model.mihm import MLPEnsemble
+from regnn.config import MLPConfig
+from regnn.model.mihm import MLPEnsemble
 
 
 def test_mlp_ensemble_without_vae():

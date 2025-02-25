@@ -1,7 +1,7 @@
 import pytest
 import torch
-from mihm.config import MLPConfig
-from mihm.model.mihm import MLP
+from regnn.config import MLPConfig
+from regnn.model.mihm import MLP
 
 
 def test_mlp_creation_without_vae():
