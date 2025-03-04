@@ -1,6 +1,6 @@
 from .train import train_mihm, TRAIN_DEVICE
 from .preprocess import preprocess
-from mihm.data.trainutils import train_test_val_split
+from regnn.data.trainutils import train_test_val_split
 from ray import train
 
 

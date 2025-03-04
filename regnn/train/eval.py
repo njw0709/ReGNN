@@ -1,4 +1,4 @@
-from mihm.model.mihm import IndexPredictionModel, MIHM
+from regnn.model.regnn import IndexPredictionModel, MIHM
 import matplotlib.pyplot as plt
 from typing import Union, Sequence
 import torch
@@ -8,9 +8,7 @@ import os
 import stata_setup
 import shap
 import matplotlib.pyplot as plt
-from .constants import TEMP_DIR
-import statsmodels.api as sm
-import statsmodels.formula.api as smf
+from ..hyperparam.constants import TEMP_DIR
 
 
 def init_stata():

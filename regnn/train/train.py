@@ -1,16 +1,20 @@
 from torch.utils.data import DataLoader
 import torch
-from ..data.dataset import MIHMDataset
+from ..data.dataset import ReGNNDataset
 from typing import Sequence, Union
 import torch.nn as nn
 import torch.optim as optim
-from mihm.model.mihm import MIHM
-from mihm.model.custom_loss import vae_kld_regularized_loss, elasticnet_loss, lasso_loss
+from regnn.model.regnn import ReGNN
+from regnn.model.custom_loss import (
+    vae_kld_regularized_loss,
+    elasticnet_loss,
+    lasso_loss,
+)
 from .eval import (
     compute_index_prediction,
     evaluate_significance_stata,
 )
-from .constants import TEMP_DIR
+from ..hyperparam.constants import TEMP_DIR
 import pandas as pd
 import os
 import traceback
@@ -21,7 +25,7 @@ TRAIN_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 torch.manual_seed(0)
 
 
-def get_gradient_norms(model: MIHM):
+def get_gradient_norms(model: ReGNN):
     grad_norms = {}
     main_parameters = [model.focal_predictor_main_weight, model.predicted_index_weight]
     main_parameters += [p for p in model.controlled_var_weights.parameters()]
@@ -33,7 +37,7 @@ def get_gradient_norms(model: MIHM):
     return grad_norms
 
 
-def get_l2_length(model: MIHM):
+def get_l2_length(model: ReGNN):
     l2_lengths = {}
     main_parameters = [model.focal_predictor_main_weight, model.predicted_index_weight]
     main_parameters += [p for p in model.controlled_var_weights.parameters()][:-1]
@@ -47,8 +51,8 @@ def get_l2_length(model: MIHM):
 
 
 def train_mihm(
-    all_heat_dataset: MIHMDataset,
-    train_mihm_dataset: MIHMDataset,
+    all_heat_dataset: ReGNNDataset,
+    train_mihm_dataset: ReGNNDataset,
     hidden_layer_sizes: Sequence[int],
     vae: bool,
     svd: bool,
@@ -59,7 +63,7 @@ def train_mihm(
     weight_decay_regression: float,
     weight_decay_nn: float,
     regress_cmd: str,
-    test_mihm_dataset: Union[MIHMDataset, None] = None,
+    test_mihm_dataset: Union[ReGNNDataset, None] = None,
     device: str = TRAIN_DEVICE,
     shuffle: bool = True,
     evaluate: bool = False,
@@ -108,7 +112,7 @@ def train_mihm(
         )
         V = V.to(torch.float32)
         V.requires_grad = False
-        model = MIHM(
+        model = ReGNN(
             interaction_var_size,
             controlled_var_size,
             hidden_layer_sizes,
@@ -126,7 +130,7 @@ def train_mihm(
             interation_direction=interaction_direction,
         )
     else:
-        model = MIHM(
+        model = ReGNN(
             interaction_var_size,
             controlled_var_size,
             hidden_layer_sizes,
@@ -402,8 +406,8 @@ def train_mihm(
 
 
 def eval_mihm(
-    model: MIHM,
-    test_mihm_dataset: MIHMDataset,
+    model: ReGNN,
+    test_mihm_dataset: ReGNNDataset,
     df_orig,
     regress_cmd: str,
     use_stata: bool = True,
@@ -453,8 +457,8 @@ def eval_mihm(
 
 
 def test_mihm(
-    model: MIHM,
-    test_dataset_torch_sample: MIHMDataset,
+    model: ReGNN,
+    test_dataset_torch_sample: ReGNNDataset,
     survey_weights: bool = False,
     regularize: bool = False,
     regularization=None,
@@ -486,7 +490,7 @@ def test_mihm(
 
 
 def save_mihm(
-    model: MIHM,
+    model: ReGNN,
     save_dir: str = os.path.join(TEMP_DIR, "checkpoints"),
     data_id: Union[str, None] = None,
 ):

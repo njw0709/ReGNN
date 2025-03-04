@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.nn.init as init
 from typing import Union, Sequence, List
 import numpy as np
-from ..config import MLPConfig, IndexPredictionConfig, ReGNNConfig
+from .base import MLPConfig, IndexPredictionConfig, ReGNNConfig
 
 
 class MLP(nn.Module):
