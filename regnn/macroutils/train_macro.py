@@ -1,4 +1,4 @@
-from .train import train_mihm, TRAIN_DEVICE
+from ..train import train_mihm, TRAIN_DEVICE
 from .preprocess import preprocess
 from regnn.data.trainutils import train_test_val_split
 from ray import train

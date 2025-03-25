@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from regnn.model.regnn import ReGNN
 from regnn.data.dataset import ReGNNDataset
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Dict, Any, Optional
 import numpy as np
 import pandas as pd
 import traceback

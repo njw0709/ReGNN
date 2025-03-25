@@ -14,7 +14,7 @@ pip install -r requirements.txt
 
 2. We are using stata to run the regression models. You can install stata from [here](https://www.stata.com/).
 
-3. Change code in hyperparam/eval.py to point to the stata executable on your machine.
+3. Change code in train/eval.py to point to the stata executable on your machine.
    Example:
 
 ```python

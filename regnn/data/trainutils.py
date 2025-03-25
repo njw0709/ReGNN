@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from pyro.infer import Predictive
 
 np.random.seed(0)
 
@@ -47,28 +46,3 @@ def summary(samples):
             "95%": v.kthvalue(int(len(v) * 0.95), dim=0)[0],
         }
     return site_stats
-
-
-def get_mse_loss(
-    model,
-    interaction_predictors,
-    interactor,
-    controlled_predictors,
-    outcome,
-    guide,
-    n_samples=100,
-):
-    model.eval()
-    mseLoss = torch.nn.MSELoss()
-    predictive = Predictive(
-        model, guide=guide, num_samples=n_samples, return_sites=("obs", "_RETURN")
-    )
-    samples = predictive(
-        interaction_predictors,
-        interactor,
-        controlled_predictors,
-    )
-    pred_summary = summary(samples)
-    predicted_epi = pred_summary["_RETURN"]["mean"].squeeze()
-    loss_test = mseLoss(predicted_epi, outcome)
-    return loss_test.item(), pred_summary
