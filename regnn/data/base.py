@@ -1,13 +1,15 @@
 from typing import Sequence, Callable, Union, Tuple, List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 numeric = Union[int, float, complex, np.number]
 
 
 class DatasetConfig(BaseModel):
     """Configuration for ReGNN datasets"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     focal_predictor: str
     controlled_predictors: List[str]
@@ -50,20 +52,14 @@ class DatasetConfig(BaseModel):
             )
         return v
 
-    class Config:
-        """Pydantic config"""
-
-        arbitrary_types_allowed = True
-
 
 class PreprocessStep(BaseModel):
     """Represents a preprocessing step with columns and function"""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     columns: List[str]
     function: Callable
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class BaseDataset:

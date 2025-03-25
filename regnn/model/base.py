@@ -1,10 +1,12 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import List, Union, Optional, Sequence
 import torch
 import numpy as np
 
 
 class MLPConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     layer_input_sizes: List[int] = Field(
         ..., description="Sizes for each layer including input and output"
     )
@@ -29,10 +31,10 @@ class MLPConfig(BaseModel):
             raise ValueError("n_ensemble must be greater than 1 when ensemble=True")
         return v
 
-    model_config = {"arbitrary_types_allowed": True}
-
 
 class IndexPredictionConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     num_moderators: Union[int, List[int]] = Field(
         ..., description="Number of moderator variables"
     )
@@ -70,10 +72,10 @@ class IndexPredictionConfig(BaseModel):
                 raise ValueError("k_dim required when svd=True")
         return v
 
-    model_config = {"arbitrary_types_allowed": True}
-
 
 class ReGNNConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     num_moderators: Union[int, List[int]] = Field(
         ..., description="Number of moderator variables"
     )
@@ -139,5 +141,3 @@ class ReGNNConfig(BaseModel):
                     if k > values.data["num_moderators"][i]:
                         raise ValueError(f"k_dim[{i}] must be <= num_moderators[{i}]")
         return v
-
-    model_config = {"arbitrary_types_allowed": True}
