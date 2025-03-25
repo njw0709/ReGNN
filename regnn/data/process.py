@@ -39,7 +39,7 @@ def standardize_cols(df, columns: Sequence):
             df[c] = (df[c] - mean) / std
             mean_std_dict[c] = (mean, std)
         else:
-            print("is category: ",  c)
+            print("is category: ", c)
     return df, mean_std_dict
 
 
@@ -52,9 +52,10 @@ def convert_categorical_to_ordinal(df, ordinal_cols: Sequence):
         df[c] = df[c].astype("float")
     return df, ordinal_cols
 
+
 def map_to_zero_one(df, cols: Sequence):
     for c in cols:
         col_min = df[c].min()
         col_max = df[c].max()
-        df[c] = (df[c]-col_min)/(col_max-col_min)
+        df[c] = (df[c] - col_min) / (col_max - col_min)
     return df, cols

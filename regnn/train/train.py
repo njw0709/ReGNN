@@ -14,7 +14,7 @@ from .eval import (
     compute_index_prediction,
     evaluate_significance_stata,
 )
-from ..hyperparam.constants import TEMP_DIR
+from ..macroutils.constants import TEMP_DIR
 import pandas as pd
 import os
 import traceback

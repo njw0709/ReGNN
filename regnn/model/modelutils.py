@@ -4,6 +4,7 @@ import inspect
 import pandas as pd
 import numpy as np
 
+
 class SklearnCompatibleModel(BaseEstimator, RegressorMixin):
     def __init__(self, model, device="cpu"):
         super(BaseEstimator, self).__init__()
@@ -13,7 +14,7 @@ class SklearnCompatibleModel(BaseEstimator, RegressorMixin):
             setattr(self, arg, val)
         self._model = model
         self._model.eval()
-        self.device=device
+        self.device = device
         if self.model.device != self.device:
             self.model.to(self.device)
 
@@ -27,15 +28,15 @@ class SklearnCompatibleModel(BaseEstimator, RegressorMixin):
             return output.numpy().reshape(-1, 1)
         else:
             return output.detach().cpu().numpy().reshape(-1, 1)
-    
-    def predict_above(self, X, val=0.9, above:bool=True):
+
+    def predict_above(self, X, val=0.9, above: bool = True):
         outcome = self.predict(X)
         if above:
             outcome_bin = outcome > val
         else:
             outcome_bin = outcome < val
         return outcome_bin
-        
+
     def fit(self, X, y):
         self.is_fitted_ = True
         return self

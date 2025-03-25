@@ -3,9 +3,10 @@ import pandas as pd
 import numpy as np
 from .base import BaseDataset, PreprocessStep, numeric
 
+
 class PreprocessingMixin:
     """Mixin for preprocessing operations"""
-    
+
     def preprocess(
         self,
         preprocess_list: Sequence[Tuple[Sequence[str], Callable]],
@@ -16,11 +17,16 @@ class PreprocessingMixin:
             df_temp, new_colnames = preprocess(df_temp, colnames)
             if set(new_colnames) != set(colnames):
                 for c in colnames:
-                    lists_to_check = [self.config.controlled_predictors, self.config.moderators]
+                    lists_to_check = [
+                        self.config.controlled_predictors,
+                        self.config.moderators,
+                    ]
                     for current_list in lists_to_check:
                         if c in current_list:
                             current_list.remove(c)
-                            current_list.extend([new_c for new_c in new_colnames if c in new_c])                          
+                            current_list.extend(
+                                [new_c for new_c in new_colnames if c in new_c]
+                            )
         if inplace:
             self.df = df_temp
             return df_temp
@@ -109,4 +115,4 @@ class PreprocessingMixin:
             else:
                 return df_temp
         else:
-            return df_temp 
+            return df_temp
