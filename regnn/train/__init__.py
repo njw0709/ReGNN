@@ -1,13 +1,12 @@
 from .trainer import train_regnn
-from .evaluation import eval_regnn, test_regnn
 from .base import TrainingConfig, TrajectoryData
-from .utils import save_regnn
+from .utils import save_regnn, load_model, save_model
 
 __all__ = [
     "train_regnn",
-    "eval_regnn",
-    "test_regnn",
     "TrainingConfig",
     "TrajectoryData",
     "save_regnn",
+    "load_model",
+    "save_model",
 ]

@@ -2,7 +2,7 @@ import torch
 from regnn.model.regnn import ReGNN
 from typing import Dict, List, Optional, Union
 import os
-from regnn.train.constants import TEMP_DIR
+from regnn.constants import TEMP_DIR
 
 
 def get_gradient_norms(model: ReGNN) -> Dict[str, List[float]]:
