@@ -40,7 +40,7 @@ def train_regnn(
         Trained model and optionally trajectory data
     """
     # Initialize trajectory data if needed
-    trajectory_data = []
+    trajectory_data: List[TrajectoryData] = []
 
     # Create torch dataset for training
     train_torch_dataset = train_dataset.to_torch_dataset(device=config.device)

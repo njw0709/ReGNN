@@ -8,7 +8,7 @@ import os
 import stata_setup
 import shap
 import matplotlib.pyplot as plt
-from ..macroutils.constants import TEMP_DIR
+from .constants import TEMP_DIR
 
 
 def init_stata():
