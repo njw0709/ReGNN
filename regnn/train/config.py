@@ -1,10 +1,12 @@
 from typing import Sequence, Union, Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 import torch
 
 
 class TrainingConfig(BaseModel):
     """Configuration for ReGNN training"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     hidden_layer_sizes: List[int]
     vae: bool = False
@@ -68,5 +70,4 @@ class TrajectoryData(BaseModel):
     regression_summary_test: Optional[dict] = None
     l2: Optional[List[dict]] = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)

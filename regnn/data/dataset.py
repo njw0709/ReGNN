@@ -3,13 +3,15 @@ from typing import Sequence, Callable, Union, Tuple, List, Dict, Any, Optional
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+from pydantic import BaseModel, ConfigDict
 
-from .base import BaseDataset, DatasetConfig, numeric
+from .base import BaseDataset, DatasetConfig
 from .preprocessing import PreprocessingMixin
+
 
 class ReGNNDataset(BaseDataset, PreprocessingMixin):
     """Main dataset class for ReGNN models"""
-    
+
     def __init__(
         self,
         df: pd.DataFrame,
@@ -25,7 +27,7 @@ class ReGNNDataset(BaseDataset, PreprocessingMixin):
             controlled_predictors=list(controlled_predictors),
             moderators=moderators,
             outcome=outcome,
-            survey_weights=survey_weights
+            survey_weights=survey_weights,
         )
         super().__init__(df, config)
         self.mean_std_dict = mean_std_dict
@@ -33,23 +35,35 @@ class ReGNNDataset(BaseDataset, PreprocessingMixin):
     def __getitem__(self, idx: int):
         if isinstance(self.config.moderators[0], str):
             item_dict = {
-                "focal_predictor": np.array([self.df[self.config.focal_predictor].iloc[idx]]),
-                "controlled": self.df[self.config.controlled_predictors].iloc[idx].values,
+                "focal_predictor": np.array(
+                    [self.df[self.config.focal_predictor].iloc[idx]]
+                ),
+                "controlled": self.df[self.config.controlled_predictors]
+                .iloc[idx]
+                .values,
                 "moderators": self.df[self.config.moderators].iloc[idx].values,
                 "outcome": np.array([self.df[self.config.outcome].iloc[idx]]),
             }
         elif isinstance(self.config.moderators[0], list):
             item_dict = {
-                "focal_predictor": np.array([self.df[self.config.focal_predictor].iloc[idx]]),
-                "controlled": self.df[self.config.controlled_predictors].iloc[idx].values,
-                "moderators": [np.array([self.df[i_p].iloc[idx]]) for i_p in self.config.moderators],
+                "focal_predictor": np.array(
+                    [self.df[self.config.focal_predictor].iloc[idx]]
+                ),
+                "controlled": self.df[self.config.controlled_predictors]
+                .iloc[idx]
+                .values,
+                "moderators": [
+                    np.array([self.df[i_p].iloc[idx]]) for i_p in self.config.moderators
+                ],
                 "outcome": np.array([self.df[self.config.outcome].iloc[idx]]),
             }
         else:
             raise TypeError("moderator must either be string or list of strings")
 
         if self.config.survey_weights is not None:
-            item_dict["weights"] = np.array([self.df[self.config.survey_weights].iloc[idx]])
+            item_dict["weights"] = np.array(
+                [self.df[self.config.survey_weights].iloc[idx]]
+            )
 
         return item_dict
 
@@ -76,30 +90,35 @@ class ReGNNDataset(BaseDataset, PreprocessingMixin):
     def to_numpy(self, dtype=np.float32):
         if isinstance(self.config.moderators[0], str):
             item_dict = {
-                "focal_predictor": self.df[self.config.focal_predictor].to_numpy().astype(dtype),
+                "focal_predictor": self.df[self.config.focal_predictor]
+                .to_numpy()
+                .astype(dtype),
                 "controlled_predictors": self.df[self.config.controlled_predictors]
                 .to_numpy()
                 .astype(dtype),
-                "moderators": self.df[self.config.moderators]
-                .to_numpy()
-                .astype(dtype),
+                "moderators": self.df[self.config.moderators].to_numpy().astype(dtype),
                 "outcome": self.df[self.config.outcome].to_numpy().astype(dtype),
             }
         elif isinstance(self.config.moderators[0], list):
             item_dict = {
-                "focal_predictor": self.df[self.config.focal_predictor].to_numpy().astype(dtype),
+                "focal_predictor": self.df[self.config.focal_predictor]
+                .to_numpy()
+                .astype(dtype),
                 "controlled_predictors": self.df[self.config.controlled_predictors]
                 .to_numpy()
                 .astype(dtype),
-                "moderators": [self.df[i_p]
-                .to_numpy() 
-                .astype(dtype) for i_p in self.config.moderators],
+                "moderators": [
+                    self.df[i_p].to_numpy().astype(dtype)
+                    for i_p in self.config.moderators
+                ],
                 "outcome": self.df[self.config.outcome].to_numpy().astype(dtype),
             }
         else:
             raise TypeError()
         if self.config.survey_weights is not None:
-            item_dict["weights"] = self.df[self.config.survey_weights].to_numpy().astype(dtype)
+            item_dict["weights"] = (
+                self.df[self.config.survey_weights].to_numpy().astype(dtype)
+            )
         return item_dict
 
     def to_tensor(self, dtype=torch.float32, device="cpu"):
@@ -114,9 +133,9 @@ class ReGNNDataset(BaseDataset, PreprocessingMixin):
                 "moderators": torch.tensor(
                     self.df[self.config.moderators].to_numpy(), dtype=dtype
                 ).to(device),
-                "outcome": torch.tensor(self.df[self.config.outcome].to_numpy(), dtype=dtype).to(
-                    device
-                ),
+                "outcome": torch.tensor(
+                    self.df[self.config.outcome].to_numpy(), dtype=dtype
+                ).to(device),
             }
         elif isinstance(self.config.moderators[0], list):
             item_dict = {
@@ -126,17 +145,20 @@ class ReGNNDataset(BaseDataset, PreprocessingMixin):
                 "controlled_predictors": torch.tensor(
                     self.df[self.config.controlled_predictors].to_numpy(), dtype=dtype
                 ).to(device),
-                "moderators": [torch.tensor(
-                    self.df[i_p].to_numpy(), dtype=dtype
-                ).to(device) for i_p in self.config.moderators],
-                "outcome": torch.tensor(self.df[self.config.outcome].to_numpy(), dtype=dtype).to(
-                    device
-                ),
+                "moderators": [
+                    torch.tensor(self.df[i_p].to_numpy(), dtype=dtype).to(device)
+                    for i_p in self.config.moderators
+                ],
+                "outcome": torch.tensor(
+                    self.df[self.config.outcome].to_numpy(), dtype=dtype
+                ).to(device),
             }
         else:
             raise TypeError()
         if self.config.survey_weights is not None:
-            item_dict["weights"] = torch.tensor(self.df[self.config.survey_weights].to_numpy(), dtype=dtype).to(device)
+            item_dict["weights"] = torch.tensor(
+                self.df[self.config.survey_weights].to_numpy(), dtype=dtype
+            ).to(device)
         return item_dict
 
     def to_torch_dataset(self, device="cpu"):
@@ -197,24 +219,29 @@ class TorchReGNNDataset(Dataset):
             index = index.to_list()
         if isinstance(self.moderator_vars, list):
             sample = {
-                "focal_predictor": torch.tensor(self.focal_predictor_var[index]).to(self.device),
+                "focal_predictor": torch.tensor(self.focal_predictor_var[index]).to(
+                    self.device
+                ),
                 "controlled_predictors": torch.from_numpy(
                     self.controlled_vars[index, :]
                 ).to(self.device),
-                "moderators": [torch.from_numpy(
-                    i_p[index, :]
-                ).to(self.device) for i_p in self.moderator_vars],
+                "moderators": [
+                    torch.from_numpy(i_p[index, :]).to(self.device)
+                    for i_p in self.moderator_vars
+                ],
                 "outcome": torch.tensor(self.label[index]).to(self.device),
             }
         else:
             sample = {
-                "focal_predictor": torch.tensor(self.focal_predictor_var[index]).to(self.device),
+                "focal_predictor": torch.tensor(self.focal_predictor_var[index]).to(
+                    self.device
+                ),
                 "controlled_predictors": torch.from_numpy(
                     self.controlled_vars[index, :]
                 ).to(self.device),
-                "moderators": torch.from_numpy(
-                    self.moderator_vars[index, :]
-                ).to(self.device),
+                "moderators": torch.from_numpy(self.moderator_vars[index, :]).to(
+                    self.device
+                ),
                 "outcome": torch.tensor(self.label[index]).to(self.device),
             }
         if self.weights is not None:
