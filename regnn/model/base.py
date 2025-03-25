@@ -5,7 +5,7 @@ import numpy as np
 
 
 class MLPConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=False)
 
     layer_input_sizes: List[int] = Field(
         ..., description="Sizes for each layer including input and output"

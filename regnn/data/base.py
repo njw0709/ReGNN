@@ -9,7 +9,7 @@ numeric = Union[int, float, complex, np.number]
 class DatasetConfig(BaseModel):
     """Configuration for ReGNN datasets"""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=False)
 
     focal_predictor: str
     controlled_predictors: List[str]
@@ -56,7 +56,7 @@ class DatasetConfig(BaseModel):
 class PreprocessStep(BaseModel):
     """Represents a preprocessing step with columns and function"""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=False)
 
     columns: List[str]
     function: Callable
