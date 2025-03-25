@@ -1,6 +1,6 @@
 from regnn.model.regnn import IndexPredictionModel, ReGNN
 import matplotlib.pyplot as plt
-from typing import Union, Sequence
+from typing import Union, Sequence, Tuple
 import torch
 import numpy as np
 import pandas as pd
@@ -9,6 +9,9 @@ import stata_setup
 import shap
 import matplotlib.pyplot as plt
 from .constants import TEMP_DIR
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from statsmodels.regression.linear_model import OLS
+from statsmodels.tools.tools import add_constant
 
 
 def init_stata():
@@ -46,6 +49,7 @@ def evaluate_significance_stata(
     thresholded_value: float = 0.0,
     interaction_direction: str = "positive",
 ):
+    """Original Stata-based significance evaluation"""
     init_stata()
     from pystata import stata
 
@@ -89,6 +93,89 @@ def evaluate_significance_stata(
     vif_results = stata.get_return()
     vif_heat = vif_results["r(vif_1)"]
     vif_inter = vif_results["r(vif_2)"]
+
+    return interaction_pval, (rsq, adjusted_rsq, rmse), (vif_heat, vif_inter)
+
+
+def evaluate_significance_statsmodels(
+    df_orig: pd.DataFrame,
+    index_predictions: np.ndarray,
+    regress_cmd: str,
+    save_dir: str = os.path.join(TEMP_DIR, "data"),
+    data_id: Union[str, None] = None,
+    save_intermediate: bool = False,
+    threshold: bool = True,
+    thresholded_value: float = 0.0,
+    interaction_direction: str = "positive",
+) -> Tuple[float, Tuple[float, float, float], Tuple[float, float]]:
+    """Python statsmodels version of significance evaluation"""
+    # Create working copy of dataframe
+    df = df_orig.copy()
+
+    # Add index predictions to dataframe
+    if interaction_direction == "positive":
+        output_index_name = "res_index"
+    elif interaction_direction == "negative":
+        output_index_name = "vul_index"
+    else:
+        raise ValueError("interaction_direction must be either 'positive' or 'negative'")
+    
+    df[output_index_name] = index_predictions
+
+    # Parse Stata regression command to get variables
+    # Example command: "regress y x1 res_index c.x1#c.res_index x2 x3"
+    cmd_parts = regress_cmd.split()
+    dependent_var = cmd_parts[1]
+    focal_predictor = cmd_parts[2]
+    
+    # Apply thresholding if requested
+    if threshold:
+        df[focal_predictor] = df[focal_predictor] - thresholded_value
+        df.loc[df[focal_predictor] < 0, focal_predictor] = 0.0
+
+    # Create interaction term
+    interaction_term = f"{focal_predictor}_x_{output_index_name}"
+    df[interaction_term] = df[focal_predictor] * df[output_index_name]
+
+    # Get other control variables (excluding the interaction term notation)
+    control_vars = [var for var in cmd_parts[2:] if '#' not in var]
+    
+    # Prepare X and y for regression
+    X = df[[focal_predictor, output_index_name, interaction_term] + control_vars]
+    X = add_constant(X)
+    y = df[dependent_var]
+
+    # Fit regression model
+    model = OLS(y, X).fit()
+    
+    # Get regression statistics
+    rsq = model.rsquared
+    adjusted_rsq = model.rsquared_adj
+    rmse = np.sqrt(model.mse_resid)
+    
+    # Get interaction term p-value (it's the 4th coefficient - after constant, focal predictor, and index)
+    interaction_pval = model.pvalues[3]
+
+    # Calculate VIF
+    def calculate_vif(X: pd.DataFrame, var_name: str) -> float:
+        """Calculate VIF for a specific variable"""
+        other_vars = [col for col in X.columns if col != var_name]
+        X_others = X[other_vars]
+        y = X[var_name]
+        r2 = OLS(y, add_constant(X_others)).fit().rsquared
+        return 1.0 / (1.0 - r2)
+
+    vif_heat = calculate_vif(X, focal_predictor)
+    vif_inter = calculate_vif(X, interaction_term)
+
+    # Save intermediate data if requested
+    if save_intermediate:
+        if data_id is not None:
+            save_path = os.path.join(save_dir, f"index_prediction_{data_id}.csv")
+        else:
+            num_files = len([f for f in os.listdir(save_dir) if f.endswith('.csv')])
+            save_path = os.path.join(save_dir, f"index_prediction_{num_files}.csv")
+        df.to_csv(save_path, index=False)
 
     return interaction_pval, (rsq, adjusted_rsq, rmse), (vif_heat, vif_inter)
 

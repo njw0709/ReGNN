@@ -17,6 +17,7 @@ dependencies = [
     "pytest",
     "shap>=0.46.0",
     "pystata>=0.0.1",
+    "statsmodels>=0.14.4",
 ]
 
 [build-system]
