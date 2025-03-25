@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import torch
 from regnn.data.dataset import ReGNNDataset
-from regnn.train.config import TrainingConfig
+from regnn.train.base import TrainingConfig
 from regnn.train.loop import train_iteration
 from regnn.train.utils import get_l2_length, get_gradient_norms
 from regnn.model.regnn import ReGNN

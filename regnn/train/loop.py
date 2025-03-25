@@ -6,7 +6,7 @@ from regnn.model.regnn import ReGNN
 
 from typing import Dict, List, Optional, Tuple
 from .utils import get_l2_length
-from .config import TrajectoryData
+from .base import TrajectoryData
 
 
 def train_iteration(
