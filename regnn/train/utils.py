@@ -1,11 +1,8 @@
 import torch
-import torch.nn as nn
 from regnn.model.regnn import ReGNN
-from typing import Dict, List, Any, Optional
-import numpy as np
-import pandas as pd
+from typing import Dict, List, Optional
 import os
-from regnn.hyperparam.constants import TEMP_DIR
+from regnn.macroutils.constants import TEMP_DIR
 
 
 def get_gradient_norms(model: ReGNN) -> Dict[str, List[float]]:

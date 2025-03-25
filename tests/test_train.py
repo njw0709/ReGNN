@@ -86,10 +86,13 @@ def test_get_l2_length(model):
 def test_get_gradient_norms(model):
     """Test get_gradient_norms function"""
     # Create dummy input and perform a forward and backward pass
-    x_moderators = torch.randn(1, 2)
-    x_focal = torch.randn(1)
-    x_controlled = torch.randn(1, 2)
-    y = torch.randn(1, 1)
+    x_moderators = torch.randn(2, 2)
+    x_focal = torch.randn(2)
+    x_controlled = torch.randn(2, 2)
+    y = torch.randn(2, 1)
+
+    # Set model to eval mode to avoid batch normalization issues with small batches
+    model.eval()
 
     output = model(x_moderators, x_focal, x_controlled)
     loss = nn.MSELoss()(output, y)
@@ -110,7 +113,7 @@ def test_train_iteration(model, dataset):
 
     # Create optimizer and loss function
     optimizer = optim.Adam(model.parameters(), lr=0.001)
-    loss_function = nn.MSELoss()
+    loss_function = nn.MSELoss(reduction="none")
 
     # Run one training iteration
     epoch_loss, l2_lengths = train_iteration(

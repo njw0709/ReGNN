@@ -1,4 +1,4 @@
-from regnn.model.regnn import IndexPredictionModel, MIHM
+from regnn.model.regnn import IndexPredictionModel, ReGNN
 import matplotlib.pyplot as plt
 from typing import Union, Sequence
 import torch
@@ -8,7 +8,7 @@ import os
 import stata_setup
 import shap
 import matplotlib.pyplot as plt
-from ..hyperparam.constants import TEMP_DIR
+from ..macroutils.constants import TEMP_DIR
 
 
 def init_stata():
@@ -20,7 +20,7 @@ def init_shap():
 
 
 def compute_index_prediction(
-    model: MIHM, interaction_predictors: torch.Tensor
+    model: ReGNN, interaction_predictors: torch.Tensor
 ) -> np.ndarray:
 
     index_model = model.index_prediction_model

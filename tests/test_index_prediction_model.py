@@ -1,8 +1,8 @@
 import pytest
 import torch
 import numpy as np
-from regnn.config import IndexPredictionConfig
-from regnn.model.mihm import IndexPredictionModel
+from regnn.model.base import IndexPredictionConfig
+from regnn.model.regnn import IndexPredictionModel
 
 
 def test_index_prediction_model_creation_basic_no_svd_no_vae():

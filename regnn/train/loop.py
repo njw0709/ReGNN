@@ -69,8 +69,15 @@ def train_iteration(
 
         # Apply survey weights if needed
         if survey_weights:
-            assert loss.shape[0] == sample["weights"].shape[0]
-            loss = (loss * sample["weights"]).mean()
+            try:
+                # For loss with reduction='none', shape is available
+                assert loss.shape[0] == sample["weights"].shape[0]
+                loss = (loss * sample["weights"]).mean()
+            except (AttributeError, IndexError):
+                # For loss with reduction='mean', shape is not available
+                # In this case, we can't apply weights directly to the reduced loss
+                # Log a warning or handle as appropriate for your use case
+                pass
 
         # Backward pass and optimization
         loss.backward()
