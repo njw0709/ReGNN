@@ -10,6 +10,8 @@ def test_dataset_config_valid():
         controlled_predictors=["control1", "control2"],
         moderators=["mod1", "mod2"],
         outcome="outcome",
+        df_dtypes={},
+        rename_dict={},
     )
     assert config.focal_predictor == "focal"
 
@@ -19,6 +21,8 @@ def test_dataset_config_valid():
         controlled_predictors=["control1"],
         moderators=[["mod1", "mod2"], ["mod3", "mod4"]],
         outcome="outcome",
+        df_dtypes={},
+        rename_dict={},
     )
     assert config.focal_predictor == "focal"
 

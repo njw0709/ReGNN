@@ -1,4 +1,4 @@
-from ..train import train_mihm, TRAIN_DEVICE
+from regnn.train import train_mihm, TRAIN_DEVICE
 from .preprocess import preprocess
 from regnn.data.trainutils import train_test_val_split
 from ray import train
@@ -150,7 +150,7 @@ def train_wrapper(config):
         "Pheno Age Accel.",
     ]
 
-    df_orig, heat_dataset = preprocess(
+    heat_dataset = preprocess(
         data_path,
         read_cols,
         rename_dict,

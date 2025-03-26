@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from .utils import get_l2_length, save_regnn
 from .base import TrainingConfig, TrajectoryData
-from regnn.eval.evaluation import eval_regnn, test_regnn
+from regnn.eval.evaluator import eval_regnn, test_regnn
 from .loop import train_iteration
 from regnn.eval.eval import compute_index_prediction
 

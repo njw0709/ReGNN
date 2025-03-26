@@ -16,6 +16,8 @@ class DatasetConfig(BaseModel):
     moderators: Union[List[str], List[List[str]]]
     outcome: str
     survey_weights: Optional[str] = None
+    df_dtypes: Dict[str, str]
+    rename_dict: Dict[str, str]
 
     @field_validator("moderators")
     @classmethod

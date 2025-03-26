@@ -40,6 +40,8 @@ def dataset(sample_df):
         moderators=["moderator1", "moderator2"],
         outcome="outcome",
         survey_weights="weights",
+        df_dtypes={},
+        rename_dict={},
     )
 
 

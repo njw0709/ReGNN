@@ -8,7 +8,7 @@ import os
 import stata_setup
 import shap
 import matplotlib.pyplot as plt
-from .constants import TEMP_DIR
+from regnn.constants import TEMP_DIR
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools.tools import add_constant
@@ -91,10 +91,10 @@ def evaluate_significance_stata(
     # vif
     stata.run("vif", quietly=quietly)
     vif_results = stata.get_return()
-    vif_heat = vif_results["r(vif_1)"]
+    vif_main = vif_results["r(vif_1)"]
     vif_inter = vif_results["r(vif_2)"]
 
-    return interaction_pval, (rsq, adjusted_rsq, rmse), (vif_heat, vif_inter)
+    return interaction_pval, (rsq, adjusted_rsq, rmse), (vif_main, vif_inter)
 
 
 def evaluate_significance_statsmodels(
@@ -118,8 +118,10 @@ def evaluate_significance_statsmodels(
     elif interaction_direction == "negative":
         output_index_name = "vul_index"
     else:
-        raise ValueError("interaction_direction must be either 'positive' or 'negative'")
-    
+        raise ValueError(
+            "interaction_direction must be either 'positive' or 'negative'"
+        )
+
     df[output_index_name] = index_predictions
 
     # Parse Stata regression command to get variables
@@ -127,7 +129,7 @@ def evaluate_significance_statsmodels(
     cmd_parts = regress_cmd.split()
     dependent_var = cmd_parts[1]
     focal_predictor = cmd_parts[2]
-    
+
     # Apply thresholding if requested
     if threshold:
         df[focal_predictor] = df[focal_predictor] - thresholded_value
@@ -138,8 +140,8 @@ def evaluate_significance_statsmodels(
     df[interaction_term] = df[focal_predictor] * df[output_index_name]
 
     # Get other control variables (excluding the interaction term notation)
-    control_vars = [var for var in cmd_parts[2:] if '#' not in var]
-    
+    control_vars = [var for var in cmd_parts[2:] if "#" not in var]
+
     # Prepare X and y for regression
     X = df[[focal_predictor, output_index_name, interaction_term] + control_vars]
     X = add_constant(X)
@@ -147,12 +149,12 @@ def evaluate_significance_statsmodels(
 
     # Fit regression model
     model = OLS(y, X).fit()
-    
+
     # Get regression statistics
     rsq = model.rsquared
     adjusted_rsq = model.rsquared_adj
     rmse = np.sqrt(model.mse_resid)
-    
+
     # Get interaction term p-value (it's the 4th coefficient - after constant, focal predictor, and index)
     interaction_pval = model.pvalues[3]
 
@@ -165,7 +167,7 @@ def evaluate_significance_statsmodels(
         r2 = OLS(y, add_constant(X_others)).fit().rsquared
         return 1.0 / (1.0 - r2)
 
-    vif_heat = calculate_vif(X, focal_predictor)
+    vif_main = calculate_vif(X, focal_predictor)
     vif_inter = calculate_vif(X, interaction_term)
 
     # Save intermediate data if requested
@@ -173,11 +175,11 @@ def evaluate_significance_statsmodels(
         if data_id is not None:
             save_path = os.path.join(save_dir, f"index_prediction_{data_id}.csv")
         else:
-            num_files = len([f for f in os.listdir(save_dir) if f.endswith('.csv')])
+            num_files = len([f for f in os.listdir(save_dir) if f.endswith(".csv")])
             save_path = os.path.join(save_dir, f"index_prediction_{num_files}.csv")
         df.to_csv(save_path, index=False)
 
-    return interaction_pval, (rsq, adjusted_rsq, rmse), (vif_heat, vif_inter)
+    return interaction_pval, (rsq, adjusted_rsq, rmse), (vif_main, vif_inter)
 
 
 def draw_margins_plot(

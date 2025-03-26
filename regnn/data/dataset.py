@@ -3,8 +3,6 @@ from typing import Sequence, Union, Tuple, Dict, Optional
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from pydantic import BaseModel, ConfigDict
-
 from .base import BaseDataset, DatasetConfig
 from .preprocessing import PreprocessingMixin
 
@@ -21,16 +19,36 @@ class ReGNNDataset(BaseDataset, PreprocessingMixin):
         outcome: str,
         survey_weights: Optional[str] = None,
         mean_std_dict: Dict[str, Tuple[float, float]] = {},
+        rename_dict: Dict[str, str] = {},
+        df_dtypes: Dict[str, str] = {},
     ) -> None:
+        df, df_orig = self._initial_processing(df, df_dtypes, rename_dict)
+        self.df_orig = df_orig
         config = DatasetConfig(
             focal_predictor=focal_predictor,
             controlled_predictors=list(controlled_predictors),
             moderators=moderators,
             outcome=outcome,
             survey_weights=survey_weights,
+            rename_dict=rename_dict,
+            df_dtypes=df_dtypes,
         )
         super().__init__(df, config)
         self.mean_std_dict = mean_std_dict
+
+    def _initial_processing(
+        self, df: pd.DataFrame, df_dtypes: Dict[str, str], rename_dict: Dict[str, str]
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        df.dropna(inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        df_orig = df.copy()
+        df.rename(columns=rename_dict, inplace=True)
+
+        # get binary and multi category columns
+        for dtype, c in df_dtypes.items():
+            if dtype == "category" or dtype == "binary":
+                df[c] = df[c].astype("category")
+        return df, df_orig
 
     def __getitem__(self, idx: int):
         if isinstance(self.config.moderators[0], str):
@@ -79,7 +97,12 @@ class ReGNNDataset(BaseDataset, PreprocessingMixin):
             self.config.outcome,
             self.config.survey_weights,
             mean_std_dict=self.mean_std_dict,
+            rename_dict=self.config.rename_dict,
+            df_dtypes=self.config.df_dtypes,
         )
+        # Set df_orig for the subset
+        dataset_subset.df_orig = self.df_orig.iloc[indices]
+
         # set extra attributes
         all_attrs_new = list(dataset_subset.__dict__.keys())
         for key, value in self.__dict__.items():
