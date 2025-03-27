@@ -13,8 +13,16 @@ class PreprocessStep(BaseModel):
 
     columns: List[str]
     function: Callable
-    reverse_function: Callable
-    reverse_transform_info: Dict[str, Any]
+    reverse_function: Optional[Callable] = None
+    reverse_transform_info: Dict[str, Any] = {}
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # If reverse_function is not provided, try to get it from the function
+        if self.reverse_function is None and hasattr(
+            self.function, "_reverse_transform"
+        ):
+            self.reverse_function = self.function._reverse_transform
 
 
 class ReGNNDatasetConfig(BaseModel):

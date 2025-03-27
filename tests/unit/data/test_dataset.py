@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import torch
 from regnn.data.dataset import ReGNNDataset
+from regnn.data.base import ReGNNDatasetConfig, PreprocessStep
+from regnn.data.preprocess_fns import standardize_cols
 
 
 @pytest.fixture
@@ -26,15 +28,24 @@ def sample_df():
 @pytest.fixture
 def dataset(sample_df):
     """Create a ReGNNDataset instance"""
-    return ReGNNDataset(
-        df=sample_df,
+    config = ReGNNDatasetConfig(
         focal_predictor="focal_predictor",
         controlled_predictors=["control1", "control2"],
         moderators=["moderator1", "moderator2"],
         outcome="outcome",
         survey_weights="weights",
-        df_dtypes={},
         rename_dict={},
+        df_dtypes={},
+        preprocess_steps=[
+            PreprocessStep(
+                columns=["control1", "control2"],
+                function=standardize_cols,
+            ),
+        ],
+    )
+    return ReGNNDataset(
+        df=sample_df,
+        config=config,
     )
 
 
@@ -132,48 +143,51 @@ def test_to_torch_dataset(dataset):
 
 def test_standardize_and_reverse(dataset):
     """Test standardization and reverse standardization"""
+    # Store original values
+    original_values = dataset.df[["control1", "control2"]].copy()
 
-    def simple_standardize(df, columns):
-        """Simple standardization function for testing"""
-        mean_std_dict = {}
-        for col in columns:
-            mean = df[col].mean()
-            std = df[col].std()
-            df[col] = (df[col] - mean) / std
-            mean_std_dict[col] = (mean, std)
-        return df, mean_std_dict
+    # Apply preprocessing from config
+    dataset.preprocess(dataset.config.preprocess_steps, inplace=True)
 
-    # Standardize
-    dataset.standardize([(["control1", "control2"], simple_standardize)])
-
-    # Check if mean_std_dict is populated
-    assert "control1" in dataset.mean_std_dict
-    assert "control2" in dataset.mean_std_dict
-
-    # Get standardized values
-    std_values = dataset.df[["control1", "control2"]].copy()
+    # Check if standardized
+    std_values = dataset.df[["control1", "control2"]]
+    assert abs(std_values["control1"].mean()) < 0.01  # Close to 0
+    assert abs(std_values["control1"].std() - 1.0) < 0.01  # Close to 1
 
     # Reverse standardize
-    dataset.reverse_standardize(["control1", "control2"])
+    dataset.reverse_preprocess(dataset.config.preprocess_steps, inplace=True)
 
     # Check if values are back to original (approximately)
-    original_mean1 = dataset.df["control1"].mean()
-    original_std1 = dataset.df["control1"].std()
-    assert abs(original_mean1) > 0.01  # Not close to 0 anymore
-    assert abs(original_std1 - 1.0) > 0.01  # Not close to 1 anymore
+    pd.testing.assert_frame_equal(
+        original_values,
+        dataset.df[["control1", "control2"]],
+        check_dtype=False,
+        check_exact=False,
+        rtol=1e-5,
+        atol=1e-5,
+    )
 
 
 def test_list_moderators(sample_df):
     """Test with list of lists for moderators"""
-    dataset = ReGNNDataset(
-        df=sample_df,
+    config = ReGNNDatasetConfig(
         focal_predictor="focal_predictor",
         controlled_predictors=["control1", "control2"],
         moderators=[["moderator1"], ["moderator2"]],
         outcome="outcome",
         survey_weights="weights",
-        df_dtypes={},
         rename_dict={},
+        df_dtypes={},
+        preprocess_steps=[
+            PreprocessStep(
+                columns=["control1", "control2"],
+                function=standardize_cols,
+            ),
+        ],
+    )
+    dataset = ReGNNDataset(
+        df=sample_df,
+        config=config,
     )
 
     # Test __getitem__

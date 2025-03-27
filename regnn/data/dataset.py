@@ -90,7 +90,6 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin):
         dataset_subset = ReGNNDataset(
             self.df.iloc[indices],
             config=self.config,
-            mean_std_dict=self.mean_std_dict,
         )
         # Set df_orig for the subset
         dataset_subset.df_orig = self.df_orig.iloc[indices]

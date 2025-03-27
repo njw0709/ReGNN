@@ -1,5 +1,6 @@
 import pytest
-from regnn.data.base import ReGNNDatasetConfig
+from regnn.data.base import ReGNNDatasetConfig, PreprocessStep
+from regnn.data.preprocess_fns import standardize_cols, multi_cat_to_one_hot
 
 
 def test_dataset_config_valid():
@@ -12,6 +13,7 @@ def test_dataset_config_valid():
         outcome="outcome",
         df_dtypes={},
         rename_dict={},
+        preprocess_steps=[],
     )
     assert config.focal_predictor == "focal"
 
@@ -23,8 +25,51 @@ def test_dataset_config_valid():
         outcome="outcome",
         df_dtypes={},
         rename_dict={},
+        preprocess_steps=[],
     )
     assert config.focal_predictor == "focal"
+
+
+def test_dataset_config_with_preprocessing():
+    """Test config with preprocessing steps"""
+    preprocess_steps = [
+        PreprocessStep(
+            columns=["col1", "col2"],
+            function=standardize_cols,
+        ),
+        PreprocessStep(
+            columns=["cat1", "cat2"],
+            function=multi_cat_to_one_hot,
+        ),
+    ]
+
+    config = ReGNNDatasetConfig(
+        focal_predictor="focal",
+        controlled_predictors=["control1", "control2"],
+        moderators=["mod1", "mod2"],
+        outcome="outcome",
+        df_dtypes={},
+        rename_dict={},
+        preprocess_steps=preprocess_steps,
+    )
+
+    assert len(config.preprocess_steps) == 2
+    assert config.preprocess_steps[0].columns == ["col1", "col2"]
+    assert config.preprocess_steps[1].columns == ["cat1", "cat2"]
+    assert config.preprocess_steps[0].function == standardize_cols
+    assert config.preprocess_steps[1].function == multi_cat_to_one_hot
+    # Check that reverse functions were automatically set
+    assert (
+        config.preprocess_steps[0].reverse_function
+        == standardize_cols._reverse_transform
+    )
+    assert (
+        config.preprocess_steps[1].reverse_function
+        == multi_cat_to_one_hot._reverse_transform
+    )
+    # Check that reverse_transform_info was initialized as empty dict
+    assert config.preprocess_steps[0].reverse_transform_info == {}
+    assert config.preprocess_steps[1].reverse_transform_info == {}
 
 
 def test_dataset_config_invalid_moderators():
@@ -36,6 +81,9 @@ def test_dataset_config_invalid_moderators():
             controlled_predictors=["control1"],
             moderators=["mod1"],
             outcome="outcome",
+            df_dtypes={},
+            rename_dict={},
+            preprocess_steps=[],
         )
 
     # Test with empty nested moderators
@@ -45,6 +93,9 @@ def test_dataset_config_invalid_moderators():
             controlled_predictors=["control1"],
             moderators=[["mod1"], []],
             outcome="outcome",
+            df_dtypes={},
+            rename_dict={},
+            preprocess_steps=[],
         )
 
 
@@ -57,6 +108,9 @@ def test_dataset_config_invalid_strings():
             controlled_predictors=["control1"],
             moderators=["mod1", "mod2"],
             outcome="outcome",
+            df_dtypes={},
+            rename_dict={},
+            preprocess_steps=[],
         )
 
     # Test whitespace focal predictor
@@ -66,6 +120,9 @@ def test_dataset_config_invalid_strings():
             controlled_predictors=["control1"],
             moderators=["mod1", "mod2"],
             outcome="outcome",
+            df_dtypes={},
+            rename_dict={},
+            preprocess_steps=[],
         )
 
     # Test empty outcome
@@ -75,6 +132,9 @@ def test_dataset_config_invalid_strings():
             controlled_predictors=["control1"],
             moderators=["mod1", "mod2"],
             outcome="",
+            df_dtypes={},
+            rename_dict={},
+            preprocess_steps=[],
         )
 
 
@@ -87,6 +147,9 @@ def test_dataset_config_invalid_controlled_predictors():
             controlled_predictors=[],
             moderators=["mod1", "mod2"],
             outcome="outcome",
+            df_dtypes={},
+            rename_dict={},
+            preprocess_steps=[],
         )
 
     # Test controlled predictors with empty string
@@ -98,6 +161,9 @@ def test_dataset_config_invalid_controlled_predictors():
             controlled_predictors=["control1", ""],
             moderators=["mod1", "mod2"],
             outcome="outcome",
+            df_dtypes={},
+            rename_dict={},
+            preprocess_steps=[],
         )
 
     # Test controlled predictors with whitespace
@@ -109,4 +175,7 @@ def test_dataset_config_invalid_controlled_predictors():
             controlled_predictors=["control1", "   "],
             moderators=["mod1", "mod2"],
             outcome="outcome",
+            df_dtypes={},
+            rename_dict={},
+            preprocess_steps=[],
         )

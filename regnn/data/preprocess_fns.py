@@ -32,48 +32,59 @@ binary_to_one_hot._reverse_transform = _reverse_binary_to_one_hot
 
 def multi_cat_to_one_hot(
     df: pd.DataFrame, multi_cats: Optional[Sequence[str]] = None, dtype: str = "float"
-) -> Tuple[pd.DataFrame, Sequence[str]]:
+) -> Tuple[pd.DataFrame, Dict[str, Sequence[str]]]:
     if multi_cats is None:
         multi_cats = df.columns
+    # Store original categories for each column before transformation
+    categories_dict = {col: df[col].cat.categories for col in multi_cats}
+    # Get dummies with drop_first=True
     df2 = pd.get_dummies(
         df[multi_cats], columns=multi_cats, dtype=float, drop_first=True
     )
-    new_colnames = df2.columns
     if dtype == "category":
         for c in df2.columns:
             df2[c] = df2[c].astype(dtype)
     df = pd.concat([df, df2], axis=1)
     df.drop(multi_cats, inplace=True, axis=1)
-    return df, new_colnames
+    return df, categories_dict
 
 
 def _reverse_multi_cat_to_one_hot(
     df: pd.DataFrame,
     multi_cats: Optional[Sequence[str]] = None,
-    column_mapping: Dict[str, List[str]] = None,
+    categories_dict: Dict[str, Sequence[str]] = None,
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
     if multi_cats is None:
         multi_cats = df.columns
-    if column_mapping is None:
-        column_mapping = {}
+    if categories_dict is None:
+        categories_dict = {}
+
     # Reconstruct original categories from one-hot encoded columns
     for cat in multi_cats:
-        if cat in column_mapping:
-            cat_cols = column_mapping[cat]
-            if cat_cols:
-                # Get the first category as the reference category
-                ref_cat = cat_cols[0].split("_", 1)[1]
-                # Create a mapping from one-hot columns to categories
-                cat_map = {col: col.split("_", 1)[1] for col in cat_cols}
-                # Create a new column with the original categories
-                df[cat] = pd.Series(index=df.index, dtype="category")
-                for col in cat_cols:
+        if cat in categories_dict:
+            original_categories = categories_dict[cat]
+            # Get one-hot column names from original categories (excluding first category)
+            cat_cols = [f"{cat}_{cat_val}" for cat_val in original_categories[1:]]
+
+            # Initialize with first category (the one that was dropped)
+            first_category = original_categories[0]
+            values = [first_category] * len(df)
+
+            # Now assign other categories based on one-hot columns
+            for i, category in enumerate(original_categories[1:], 1):
+                col = f"{cat}_{category}"
+                if col in df.columns:  # Check if column exists
                     mask = df[col] == 1
-                    df.loc[mask, cat] = cat_map[col]
-                # Fill remaining values with the reference category
-                df[cat] = df[cat].fillna(ref_cat)
-                # Drop the one-hot encoded columns
-                df.drop(columns=cat_cols, inplace=True)
+                    # Only update values where mask is True
+                    for idx in mask[mask].index:
+                        values[idx] = category
+
+            # Create categorical column with the correct categories
+            df[cat] = pd.Categorical(values, categories=original_categories)
+
+            # Drop the one-hot encoded columns
+            df.drop(columns=cat_cols, inplace=True, errors="ignore")
+
     return df, multi_cats
 
 
@@ -154,7 +165,7 @@ def map_to_zero_one(
         col_max = df[c].max()
         df[c] = (df[c] - col_min) / (col_max - col_min)
         min_max_dict[c] = (col_min, col_max)
-    return df, cols
+    return df, min_max_dict
 
 
 def _reverse_map_to_zero_one(
@@ -170,7 +181,7 @@ def _reverse_map_to_zero_one(
         if c in min_max_dict:
             col_min, col_max = min_max_dict[c]
             df[c] = (df[c] * (col_max - col_min)) + col_min
-    return df, cols
+    return df, min_max_dict
 
 
 map_to_zero_one._reverse_transform = _reverse_map_to_zero_one
