@@ -8,7 +8,7 @@ from regnn.data.preprocess_fns import (
 )
 from regnn.data.dataset import ReGNNDataset
 from regnn.data.base import ReGNNDatasetConfig, PreprocessStep
-from typing import List, Sequence, Tuple, Union
+from typing import List, Sequence, Union
 
 
 def preprocess(
@@ -33,25 +33,8 @@ def preprocess(
     df_dtype_list += [("continuous", c) for c in continuous_cols]
     df_dtypes = dict(df_dtype_list)
 
-    # Create config
-    config = ReGNNDatasetConfig(
-        focal_predictor=focal_predictor,
-        controlled_predictors=controlled_cols,
-        moderators=moderators,
-        outcome=outcome_col,
-        survey_weights=survey_weights,
-        rename_dict=rename_dict,
-        df_dtypes=df_dtypes,
-    )
-
-    # make ReGNN dataset
-    regnn_dataset = ReGNNDataset(
-        df,
-        config=config,
-    )
-
-    # preprocess data
-    preprocess_list = [
+    # Create preprocessing steps
+    preprocess_steps = [
         PreprocessStep(columns=binary_cols, function=binary_to_one_hot),
         PreprocessStep(columns=categorical_cols, function=multi_cat_to_one_hot),
         PreprocessStep(columns=ordinal_cols, function=convert_categorical_to_ordinal),
@@ -61,11 +44,30 @@ def preprocess(
     ]
 
     if survey_weights:
-        preprocess_list.append(
+        preprocess_steps.append(
             PreprocessStep(columns=[survey_weights], function=map_to_zero_one)
         )
 
-    regnn_dataset.preprocess(preprocess_list, inplace=True)
+    # Create config with preprocessing steps
+    config = ReGNNDatasetConfig(
+        focal_predictor=focal_predictor,
+        controlled_predictors=controlled_cols,
+        moderators=moderators,
+        outcome=outcome_col,
+        survey_weights=survey_weights,
+        rename_dict=rename_dict,
+        df_dtypes=df_dtypes,
+        preprocess_steps=preprocess_steps,
+    )
+
+    # make ReGNN dataset
+    regnn_dataset = ReGNNDataset(
+        df,
+        config=config,
+    )
+
+    # preprocess data
+    regnn_dataset.preprocess(inplace=True)
     regnn_dataset.dropna(inplace=True)
 
     return regnn_dataset
