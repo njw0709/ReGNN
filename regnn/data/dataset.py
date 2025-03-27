@@ -7,19 +7,6 @@ from .base import BaseDataset, ReGNNDatasetConfig
 from .preprocessor_mixin import PreprocessorMixin
 
 
-# config = ReGNNDatasetConfig(
-#     focal_predictor=focal_predictor,
-#     controlled_predictors=list(controlled_predictors),
-#     moderators=moderators,
-#     outcome=outcome,
-#     survey_weights=survey_weights,
-#     rename_dict=rename_dict,
-#     df_dtypes=df_dtypes,
-# )
-
-## TODO: implement changes with preprocessing here and preprocess macroutils.
-
-
 class ReGNNDataset(BaseDataset, PreprocessorMixin):
     """Main dataset class for ReGNN models"""
 

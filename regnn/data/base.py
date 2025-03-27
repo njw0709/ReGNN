@@ -35,7 +35,7 @@ class ReGNNDatasetConfig(BaseModel):
     moderators: Union[List[str], List[List[str]]]
     outcome: str
     survey_weights: Optional[str] = None
-    df_dtypes: Dict[str, str]
+    df_dtypes: Dict[str, List[str]]
     rename_dict: Dict[str, str]
     preprocess_steps: List[PreprocessStep]
 

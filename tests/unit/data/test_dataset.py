@@ -4,7 +4,11 @@ import numpy as np
 import torch
 from regnn.data.dataset import ReGNNDataset
 from regnn.data.base import ReGNNDatasetConfig, PreprocessStep
-from regnn.data.preprocess_fns import standardize_cols
+from regnn.data.preprocess_fns import (
+    standardize_cols,
+    multi_cat_to_one_hot,
+    binary_to_one_hot,
+)
 
 
 @pytest.fixture
@@ -147,7 +151,7 @@ def test_standardize_and_reverse(dataset):
     original_values = dataset.df[["control1", "control2"]].copy()
 
     # Apply preprocessing from config
-    dataset.preprocess(dataset.config.preprocess_steps, inplace=True)
+    dataset.preprocess(inplace=True)
 
     # Check if standardized
     std_values = dataset.df[["control1", "control2"]]
@@ -155,7 +159,7 @@ def test_standardize_and_reverse(dataset):
     assert abs(std_values["control1"].std() - 1.0) < 0.01  # Close to 1
 
     # Reverse standardize
-    dataset.reverse_preprocess(dataset.config.preprocess_steps, inplace=True)
+    dataset.reverse_preprocess(inplace=True)
 
     # Check if values are back to original (approximately)
     pd.testing.assert_frame_equal(
@@ -210,3 +214,156 @@ def test_list_moderators(sample_df):
     item = torch_dataset[0]
     assert isinstance(item["moderators"], list)
     assert len(item["moderators"]) == 2
+
+
+def test_preprocessing_multiple_steps(sample_df):
+    """Test multiple preprocessing steps and their reversal"""
+    # Create categorical columns for testing
+    sample_df["cat_col"] = pd.Series(["A", "B", "C"] * 33 + ["A"], dtype="category")
+    sample_df["binary_col"] = pd.Series([True, False] * 50, dtype="category")
+
+    config = ReGNNDatasetConfig(
+        focal_predictor="focal_predictor",
+        controlled_predictors=["control1", "control2", "cat_col", "binary_col"],
+        moderators=["moderator1", "moderator2"],
+        outcome="outcome",
+        survey_weights="weights",
+        rename_dict={},
+        df_dtypes={"category": ["cat_col"], "binary": ["binary_col"]},
+        preprocess_steps=[
+            PreprocessStep(
+                columns=["control1", "control2"],
+                function=standardize_cols,
+            ),
+            PreprocessStep(
+                columns=["cat_col"],
+                function=multi_cat_to_one_hot,
+            ),
+            PreprocessStep(
+                columns=["binary_col"],
+                function=binary_to_one_hot,
+            ),
+        ],
+    )
+
+    # Create dataset and store original data
+    dataset = ReGNNDataset(df=sample_df.copy(), config=config)
+    original_data = dataset.df.copy()
+
+    # Apply preprocessing
+    dataset.preprocess(inplace=True)
+
+    # Check standardization
+    assert abs(dataset.df["control1"].mean()) < 0.01
+    assert abs(dataset.df["control1"].std() - 1.0) < 0.01
+    assert abs(dataset.df["control2"].mean()) < 0.01
+    assert abs(dataset.df["control2"].std() - 1.0) < 0.01
+
+    # Check one-hot encoding
+    assert "cat_col_B" in dataset.df.columns
+    assert "cat_col_C" in dataset.df.columns
+    assert "binary_col" in dataset.df.columns
+
+    # Verify df_orig contains original data
+    pd.testing.assert_frame_equal(dataset.df_orig, sample_df)
+
+    # Reverse preprocessing
+    dataset.reverse_preprocess(inplace=True)
+
+    # Check if data is back to original
+    pd.testing.assert_frame_equal(
+        original_data[["control1", "control2"]],
+        dataset.df[["control1", "control2"]],
+        check_dtype=False,
+        check_exact=False,
+        rtol=1e-5,
+        atol=1e-5,
+    )
+
+    # Check categorical columns are restored correctly
+    pd.testing.assert_series_equal(
+        original_data["cat_col"],
+        dataset.df["cat_col"],
+        check_dtype=True,
+        check_categorical=True,
+    )
+    pd.testing.assert_series_equal(
+        original_data["binary_col"],
+        dataset.df["binary_col"],
+        check_dtype=True,
+        check_categorical=True,
+    )
+
+
+def test_preprocessing_subset_preservation(sample_df):
+    """Test that preprocessing information is preserved when getting subset"""
+    config = ReGNNDatasetConfig(
+        focal_predictor="focal_predictor",
+        controlled_predictors=["control1", "control2"],
+        moderators=["moderator1", "moderator2"],
+        outcome="outcome",
+        survey_weights="weights",
+        rename_dict={},
+        df_dtypes={},
+        preprocess_steps=[
+            PreprocessStep(
+                columns=["control1", "control2"],
+                function=standardize_cols,
+            ),
+        ],
+    )
+
+    # Create dataset and preprocess
+    dataset = ReGNNDataset(df=sample_df.copy(), config=config)
+    dataset.preprocess(inplace=True)
+
+    # Get subset
+    subset = dataset.get_subset([0, 1, 2, 3, 4])
+
+    # Verify subset has same preprocessing steps
+    assert len(subset.config.preprocess_steps) == len(dataset.config.preprocess_steps)
+
+    # Verify subset can be reversed correctly
+    original_subset = subset.df.copy()
+    subset.reverse_preprocess(inplace=True)
+
+    # Check if reversed data matches original subset
+    pd.testing.assert_frame_equal(
+        dataset.df_orig.iloc[[0, 1, 2, 3, 4]][["control1", "control2"]],
+        subset.df[["control1", "control2"]],
+        check_dtype=False,
+        check_exact=False,
+        rtol=1e-5,
+        atol=1e-5,
+    )
+
+
+def test_df_orig_independence(sample_df):
+    """Test that df_orig remains unchanged through preprocessing operations"""
+    config = ReGNNDatasetConfig(
+        focal_predictor="focal_predictor",
+        controlled_predictors=["control1", "control2"],
+        moderators=["moderator1", "moderator2"],
+        outcome="outcome",
+        survey_weights="weights",
+        rename_dict={},
+        df_dtypes={},
+        preprocess_steps=[
+            PreprocessStep(
+                columns=["control1", "control2"],
+                function=standardize_cols,
+            ),
+        ],
+    )
+
+    # Create dataset and store original data
+    dataset = ReGNNDataset(df=sample_df.copy(), config=config)
+    original_df = sample_df.copy()
+
+    # Multiple preprocessing and reverse preprocessing operations
+    for _ in range(3):
+        dataset.preprocess(inplace=True)
+        dataset.reverse_preprocess(inplace=True)
+
+    # Verify df_orig remained unchanged
+    pd.testing.assert_frame_equal(dataset.df_orig, original_df)
