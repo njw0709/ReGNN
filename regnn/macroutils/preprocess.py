@@ -1,5 +1,5 @@
 import pandas as pd
-from regnn.data.process import (
+from regnn.data.preprocess_fns import (
     multi_cat_to_one_hot,
     binary_to_one_hot,
     standardize_cols,
@@ -7,6 +7,7 @@ from regnn.data.process import (
     map_to_zero_one,
 )
 from regnn.data.dataset import ReGNNDataset
+from regnn.data.base import ReGNNDatasetConfig, PreprocessStep
 from typing import List, Sequence, Tuple, Union
 
 
@@ -32,32 +33,39 @@ def preprocess(
     df_dtype_list += [("continuous", c) for c in continuous_cols]
     df_dtypes = dict(df_dtype_list)
 
-    # make ReGNN dataset
-    regnn_dataset = ReGNNDataset(
-        df,
-        focal_predictor,
-        controlled_cols,
-        moderators,
-        outcome_col,
-        survey_weights,
+    # Create config
+    config = ReGNNDatasetConfig(
+        focal_predictor=focal_predictor,
+        controlled_predictors=controlled_cols,
+        moderators=moderators,
+        outcome=outcome_col,
+        survey_weights=survey_weights,
         rename_dict=rename_dict,
         df_dtypes=df_dtypes,
     )
 
+    # make ReGNN dataset
+    regnn_dataset = ReGNNDataset(
+        df,
+        config=config,
+    )
+
     # preprocess data
     preprocess_list = [
-        (binary_cols, binary_to_one_hot),
-        (categorical_cols, multi_cat_to_one_hot),
-        (ordinal_cols, convert_categorical_to_ordinal),
+        PreprocessStep(columns=binary_cols, function=binary_to_one_hot),
+        PreprocessStep(columns=categorical_cols, function=multi_cat_to_one_hot),
+        PreprocessStep(columns=ordinal_cols, function=convert_categorical_to_ordinal),
+        PreprocessStep(
+            columns=continuous_cols + ordinal_cols, function=standardize_cols
+        ),
     ]
 
     if survey_weights:
-        preprocess_list.append(([survey_weights], map_to_zero_one))
-
-    standardize_list = [(continuous_cols + ordinal_cols, standardize_cols)]
+        preprocess_list.append(
+            PreprocessStep(columns=[survey_weights], function=map_to_zero_one)
+        )
 
     regnn_dataset.preprocess(preprocess_list, inplace=True)
-    regnn_dataset.standardize(standardize_list, inplace=True)
     regnn_dataset.dropna(inplace=True)
 
     return regnn_dataset

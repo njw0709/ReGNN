@@ -1,11 +1,11 @@
 import pytest
-from regnn.data.base import DatasetConfig
+from regnn.data.base import ReGNNDatasetConfig
 
 
 def test_dataset_config_valid():
     """Test valid dataset configurations"""
     # Test with string list moderators
-    config = DatasetConfig(
+    config = ReGNNDatasetConfig(
         focal_predictor="focal",
         controlled_predictors=["control1", "control2"],
         moderators=["mod1", "mod2"],
@@ -16,7 +16,7 @@ def test_dataset_config_valid():
     assert config.focal_predictor == "focal"
 
     # Test with nested list moderators
-    config = DatasetConfig(
+    config = ReGNNDatasetConfig(
         focal_predictor="focal",
         controlled_predictors=["control1"],
         moderators=[["mod1", "mod2"], ["mod3", "mod4"]],
@@ -31,7 +31,7 @@ def test_dataset_config_invalid_moderators():
     """Test invalid moderator configurations"""
     # Test with single moderator
     with pytest.raises(ValueError, match="Must have at least 2 moderators"):
-        DatasetConfig(
+        ReGNNDatasetConfig(
             focal_predictor="focal",
             controlled_predictors=["control1"],
             moderators=["mod1"],
@@ -40,7 +40,7 @@ def test_dataset_config_invalid_moderators():
 
     # Test with empty nested moderators
     with pytest.raises(ValueError, match="Must have at least 2 moderators"):
-        DatasetConfig(
+        ReGNNDatasetConfig(
             focal_predictor="focal",
             controlled_predictors=["control1"],
             moderators=[["mod1"], []],
@@ -52,7 +52,7 @@ def test_dataset_config_invalid_strings():
     """Test invalid string configurations"""
     # Test empty focal predictor
     with pytest.raises(ValueError, match="Cannot be empty or whitespace"):
-        DatasetConfig(
+        ReGNNDatasetConfig(
             focal_predictor="",
             controlled_predictors=["control1"],
             moderators=["mod1", "mod2"],
@@ -61,7 +61,7 @@ def test_dataset_config_invalid_strings():
 
     # Test whitespace focal predictor
     with pytest.raises(ValueError, match="Cannot be empty or whitespace"):
-        DatasetConfig(
+        ReGNNDatasetConfig(
             focal_predictor="   ",
             controlled_predictors=["control1"],
             moderators=["mod1", "mod2"],
@@ -70,7 +70,7 @@ def test_dataset_config_invalid_strings():
 
     # Test empty outcome
     with pytest.raises(ValueError, match="Cannot be empty or whitespace"):
-        DatasetConfig(
+        ReGNNDatasetConfig(
             focal_predictor="focal",
             controlled_predictors=["control1"],
             moderators=["mod1", "mod2"],
@@ -82,7 +82,7 @@ def test_dataset_config_invalid_controlled_predictors():
     """Test invalid controlled predictors configurations"""
     # Test empty controlled predictors list
     with pytest.raises(ValueError, match="Must have at least one controlled predictor"):
-        DatasetConfig(
+        ReGNNDatasetConfig(
             focal_predictor="focal",
             controlled_predictors=[],
             moderators=["mod1", "mod2"],
@@ -93,7 +93,7 @@ def test_dataset_config_invalid_controlled_predictors():
     with pytest.raises(
         ValueError, match="Controlled predictors cannot contain empty strings"
     ):
-        DatasetConfig(
+        ReGNNDatasetConfig(
             focal_predictor="focal",
             controlled_predictors=["control1", ""],
             moderators=["mod1", "mod2"],
@@ -104,7 +104,7 @@ def test_dataset_config_invalid_controlled_predictors():
     with pytest.raises(
         ValueError, match="Controlled predictors cannot contain empty strings"
     ):
-        DatasetConfig(
+        ReGNNDatasetConfig(
             focal_predictor="focal",
             controlled_predictors=["control1", "   "],
             moderators=["mod1", "mod2"],

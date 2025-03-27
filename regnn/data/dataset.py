@@ -3,38 +3,35 @@ from typing import Sequence, Union, Tuple, Dict, Optional
 import numpy as np
 import torch
 from torch.utils.data import Dataset
-from .base import BaseDataset, DatasetConfig
-from .preprocessing import PreprocessingMixin
+from .base import BaseDataset, ReGNNDatasetConfig
+from .preprocessor_mixin import PreprocessorMixin
 
 
-class ReGNNDataset(BaseDataset, PreprocessingMixin):
+# config = ReGNNDatasetConfig(
+#     focal_predictor=focal_predictor,
+#     controlled_predictors=list(controlled_predictors),
+#     moderators=moderators,
+#     outcome=outcome,
+#     survey_weights=survey_weights,
+#     rename_dict=rename_dict,
+#     df_dtypes=df_dtypes,
+# )
+
+## TODO: implement changes with preprocessing here and preprocess macroutils.
+
+
+class ReGNNDataset(BaseDataset, PreprocessorMixin):
     """Main dataset class for ReGNN models"""
 
     def __init__(
         self,
         df: pd.DataFrame,
-        focal_predictor: str,
-        controlled_predictors: Sequence[str],
-        moderators: Union[Sequence[str], Sequence[Sequence[str]]],
-        outcome: str,
-        survey_weights: Optional[str] = None,
-        mean_std_dict: Dict[str, Tuple[float, float]] = {},
-        rename_dict: Dict[str, str] = {},
-        df_dtypes: Dict[str, str] = {},
+        config: ReGNNDatasetConfig,
     ) -> None:
-        df, df_orig = self._initial_processing(df, df_dtypes, rename_dict)
+        df, df_orig = self._initial_processing(df, config.df_dtypes, config.rename_dict)
         self.df_orig = df_orig
-        config = DatasetConfig(
-            focal_predictor=focal_predictor,
-            controlled_predictors=list(controlled_predictors),
-            moderators=moderators,
-            outcome=outcome,
-            survey_weights=survey_weights,
-            rename_dict=rename_dict,
-            df_dtypes=df_dtypes,
-        )
         super().__init__(df, config)
-        self.mean_std_dict = mean_std_dict
+        # self.mean_std_dict = mean_std_dict # move to processing_step
 
     def _initial_processing(
         self, df: pd.DataFrame, df_dtypes: Dict[str, str], rename_dict: Dict[str, str]
@@ -48,6 +45,7 @@ class ReGNNDataset(BaseDataset, PreprocessingMixin):
         for dtype, c in df_dtypes.items():
             if dtype == "category" or dtype == "binary":
                 df[c] = df[c].astype("category")
+
         return df, df_orig
 
     def __getitem__(self, idx: int):
@@ -91,14 +89,8 @@ class ReGNNDataset(BaseDataset, PreprocessingMixin):
     def get_subset(self, indices: Sequence[int]) -> "ReGNNDataset":
         dataset_subset = ReGNNDataset(
             self.df.iloc[indices],
-            self.config.focal_predictor,
-            self.config.controlled_predictors,
-            self.config.moderators,
-            self.config.outcome,
-            self.config.survey_weights,
+            config=self.config,
             mean_std_dict=self.mean_std_dict,
-            rename_dict=self.config.rename_dict,
-            df_dtypes=self.config.df_dtypes,
         )
         # Set df_orig for the subset
         dataset_subset.df_orig = self.df_orig.iloc[indices]

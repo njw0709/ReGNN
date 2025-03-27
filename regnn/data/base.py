@@ -6,7 +6,18 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict
 numeric = Union[int, float, complex, np.number]
 
 
-class DatasetConfig(BaseModel):
+class PreprocessStep(BaseModel):
+    """Represents a preprocessing step with columns and function"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
+    columns: List[str]
+    function: Callable
+    reverse_function: Callable
+    reverse_transform_info: Dict[str, Any]
+
+
+class ReGNNDatasetConfig(BaseModel):
     """Configuration for ReGNN datasets"""
 
     model_config = ConfigDict(arbitrary_types_allowed=False)
@@ -18,6 +29,7 @@ class DatasetConfig(BaseModel):
     survey_weights: Optional[str] = None
     df_dtypes: Dict[str, str]
     rename_dict: Dict[str, str]
+    preprocess_steps: List[PreprocessStep]
 
     @field_validator("moderators")
     @classmethod
@@ -55,19 +67,10 @@ class DatasetConfig(BaseModel):
         return v
 
 
-class PreprocessStep(BaseModel):
-    """Represents a preprocessing step with columns and function"""
-
-    model_config = ConfigDict(arbitrary_types_allowed=False)
-
-    columns: List[str]
-    function: Callable
-
-
 class BaseDataset:
     """Base class for dataset operations"""
 
-    def __init__(self, df: pd.DataFrame, config: DatasetConfig):
+    def __init__(self, df: pd.DataFrame, config: ReGNNDatasetConfig):
         self.df = df
         self.columns = df.columns.tolist()
         self.config = config
