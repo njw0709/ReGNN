@@ -23,10 +23,8 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin):
     def _initial_processing(
         self, df: pd.DataFrame, df_dtypes: Dict[str, str], rename_dict: Dict[str, str]
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        df.dropna(inplace=True)
-        df.reset_index(drop=True, inplace=True)
         df_orig = df.copy()
-        df.rename(columns=rename_dict, inplace=True)
+        df = df.dropna().reset_index(drop=True).rename(columns=rename_dict)
 
         # get binary and multi category columns
         for dtype, c in df_dtypes.items():
@@ -75,11 +73,11 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin):
 
     def get_subset(self, indices: Sequence[int]) -> "ReGNNDataset":
         dataset_subset = ReGNNDataset(
-            self.df.iloc[indices],
+            self.df_orig.iloc[indices],
             config=self.config,
         )
-        # Set df_orig for the subset
-        dataset_subset.df_orig = self.df_orig.iloc[indices]
+        # preprocess
+        dataset_subset.preprocess()
 
         # set extra attributes
         all_attrs_new = list(dataset_subset.__dict__.keys())

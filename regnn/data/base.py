@@ -66,8 +66,6 @@ class ReGNNDatasetConfig(BaseModel):
     @classmethod
     def validate_controlled_predictors(cls, v):
         """Validate that controlled predictors list is not empty and has no empty strings"""
-        if not v:
-            raise ValueError("Must have at least one controlled predictor")
         if any(not pred or pred.isspace() for pred in v):
             raise ValueError(
                 "Controlled predictors cannot contain empty strings or whitespace"
