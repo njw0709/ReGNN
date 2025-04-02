@@ -7,9 +7,8 @@ from typing import Sequence, Dict, List, Tuple, Any, Optional
 def binary_to_one_hot(
     df: pd.DataFrame, binary_cats: Optional[Sequence[str]] = None, dtype: str = "float"
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
-    one_hot_maps = {}
     if binary_cats is None:
-        binary_cats = df.columns
+        return df
     for bc in binary_cats:
         df[bc] = df[bc].cat.codes
     return df, binary_cats
@@ -19,7 +18,7 @@ def _reverse_binary_to_one_hot(
     df: pd.DataFrame, binary_cats: Optional[Sequence[str]] = None
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
     if binary_cats is None:
-        binary_cats = df.columns
+        return df
     for bc in binary_cats:
         # Since we used cat.codes, we need to map back to original categories
         # This assumes the original categories were 0 and 1
@@ -34,7 +33,7 @@ def multi_cat_to_one_hot(
     df: pd.DataFrame, multi_cats: Optional[Sequence[str]] = None, dtype: str = "float"
 ) -> Tuple[pd.DataFrame, Dict[str, Sequence[str]]]:
     if multi_cats is None:
-        multi_cats = df.columns
+        return df
     # Store original categories for each column before transformation
     categories_dict = {col: df[col].cat.categories for col in multi_cats}
     # Get dummies with drop_first=True
@@ -46,23 +45,24 @@ def multi_cat_to_one_hot(
             df2[c] = df2[c].astype(dtype)
     df = pd.concat([df, df2], axis=1)
     df.drop(multi_cats, inplace=True, axis=1)
-    return df, categories_dict
+    return_dict = {"category_map": categories_dict}
+    return df, return_dict
 
 
 def _reverse_multi_cat_to_one_hot(
     df: pd.DataFrame,
     multi_cats: Optional[Sequence[str]] = None,
-    categories_dict: Dict[str, Sequence[str]] = None,
+    category_map: Dict[str, Sequence[str]] = None,
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
     if multi_cats is None:
-        multi_cats = df.columns
-    if categories_dict is None:
-        categories_dict = {}
+        return df
+    if category_map is None:
+        raise ValueError("Category mapping dictionary must be provided!!")
 
     # Reconstruct original categories from one-hot encoded columns
     for cat in multi_cats:
-        if cat in categories_dict:
-            original_categories = categories_dict[cat]
+        if cat in category_map:
+            original_categories = category_map[cat]
             # Get one-hot column names from original categories (excluding first category)
             cat_cols = [f"{cat}_{cat_val}" for cat_val in original_categories[1:]]
 
@@ -105,7 +105,8 @@ def standardize_cols(
             mean_std_dict[c] = (mean, std)
         else:
             print("is category: ", c)
-    return df, mean_std_dict
+    return_dict = {"mean_std_dict": mean_std_dict}
+    return df, return_dict
 
 
 def _reverse_standardize_cols(
@@ -114,9 +115,11 @@ def _reverse_standardize_cols(
     mean_std_dict: Dict[str, Tuple[float, float]] = None,
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
     if columns is None:
-        columns = df.columns
+        return df
     if mean_std_dict is None:
-        mean_std_dict = {}
+        raise ValueError(
+            "mean std dictionary must be provided to reverse standardization!!!"
+        )
     for c in columns:
         if c in mean_std_dict and df[c].dtype != "category":
             mean, std = mean_std_dict[c]
@@ -142,7 +145,7 @@ def _reverse_convert_categorical_to_ordinal(
     df: pd.DataFrame, ordinal_cols: Optional[Sequence[str]] = None
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
     if ordinal_cols is None:
-        ordinal_cols = df.columns
+        return df
     for c in ordinal_cols:
         # Convert back to categorical type
         df[c] = df[c].astype("category")
@@ -165,7 +168,8 @@ def map_to_zero_one(
         col_max = df[c].max()
         df[c] = (df[c] - col_min) / (col_max - col_min)
         min_max_dict[c] = (col_min, col_max)
-    return df, min_max_dict
+    return_dict = {"min_max_dict": min_max_dict}
+    return df, return_dict
 
 
 def _reverse_map_to_zero_one(

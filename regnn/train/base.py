@@ -67,6 +67,7 @@ class TrainingConfig(BaseModel):
     save_intermediate_index: bool = Field(
         False, description="Whether to save intermediate indices"
     )
+    model_save_name: str = Field("regnn_", description="model checkpoint save name")
 
     @field_validator("hidden_layer_sizes")
     def validate_hidden_layer_sizes(cls, v):

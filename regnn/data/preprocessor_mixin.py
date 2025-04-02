@@ -28,11 +28,14 @@ class PreprocessorMixin:
             # Update column lists if columns were changed
             if isinstance(return_value, dict):
                 # For functions that return a categories dictionary (like multi_cat_to_one_hot)
-                new_colnames = [
-                    f"{col}_{cat}"
-                    for col in step.columns
-                    for cat in return_value[col][1:]
-                ]  # Exclude first category
+                if "category_map" in return_value.keys():
+                    new_colnames = [
+                        f"{col}_{cat}"
+                        for col in step.columns
+                        for cat in return_value["category_map"][col][1:]
+                    ]  # Exclude first category
+                else:
+                    new_colnames = step.columns
             else:
                 # For functions that return column names
                 new_colnames = return_value
@@ -54,19 +57,13 @@ class PreprocessorMixin:
             if hasattr(step.function, "_reverse_transform"):
                 # For functions that have built-in reverse transform
                 step.reverse_function = step.function._reverse_transform
-
-                # Store the return value directly as reverse_transform_info
-                if step.function == standardize_cols:
-                    step.reverse_transform_info = {"mean_std_dict": return_value}
-                elif step.function == map_to_zero_one:
-                    step.reverse_transform_info = {"min_max_dict": return_value}
-                elif step.function == multi_cat_to_one_hot:
-                    step.reverse_transform_info = {"categories_dict": return_value}
-                elif step.function == binary_to_one_hot:
-                    # binary_to_one_hot doesn't need additional info
-                    step.reverse_transform_info = {}
+                if isinstance(return_value, dict):
+                    step.reverse_transform_info = return_value
                 else:
-                    step.reverse_transform_info = {}
+                    step.reverse_transform_info = {
+                        "original_columns": original_cols,
+                        "new_columns": new_colnames,
+                    }
             else:
                 # For functions without built-in reverse transform
                 step.reverse_transform_info = {
