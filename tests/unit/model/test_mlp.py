@@ -5,21 +5,21 @@ from regnn.model.regnn import MLP
 
 
 def test_mlp_creation_without_vae():
-    config = MLPConfig(layer_input_sizes=[10, 5])
+    config = MLPConfig(hidden_layer_sizes=[10, 5])
     model = MLP.from_config(config)
     assert isinstance(model, MLP)
     assert model.vae == False
     assert model.output_mu_var == False
-    assert model.ensemble == False
+    assert model.n_ensemble == 1
 
 
 def test_mlp_creation_with_vae():
-    config = MLPConfig(layer_input_sizes=[10, 5], vae=True)
+    config = MLPConfig(hidden_layer_sizes=[10, 5], vae=True)
     model = MLP.from_config(config)
     assert isinstance(model, MLP)
     assert model.vae == True
     assert model.output_mu_var == False
-    assert model.ensemble == False
+    assert model.n_ensemble == 1
 
 
 def test_mlp_output_mu_var():

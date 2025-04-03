@@ -34,7 +34,7 @@ class TrainingConfig(BaseModel):
     get_testset_results: bool = Field(
         True, description="Whether to compute results on test set"
     )
-    file_id: Optional[str] = Field(None, description="Identifier for saving files")
+    file_id: Optional[str] = Field(0, description="Identifier for saving files")
     save_model: bool = Field(False, description="Whether to save the model")
     use_stata: bool = Field(False, description="Whether to use Stata for analysis")
     return_trajectory: bool = Field(
