@@ -51,6 +51,8 @@ class SVDConfig(BaseModel):
 class IndexPredictionConfig(MLPConfig):
     """Configuration for index prediction component"""
 
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
     num_moderators: Union[int, List[int]] = Field(
         ..., description="Number of moderator variables"
     )
@@ -107,12 +109,11 @@ class ReGNNConfig(BaseModel):
             "output_mu_var",
             "ensemble",
             "svd",
-            "k_dim",
-            "svd_matrix",
         }
 
         # Split kwargs between nn_config and main config
         nn_kwargs = {k: v for k, v in kwargs.items() if k in nn_params}
+        # svd_kwargs = {k: v for k, v in kwargs.items() if k in svd_params}
         main_kwargs = {k: v for k, v in kwargs.items() if k not in nn_params}
 
         nn_config = IndexPredictionConfig(
