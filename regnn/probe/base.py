@@ -19,11 +19,11 @@ class Snapshot(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=False)
 
     time: Union[int, float, Dict[str, float]] = Field(
-        -1,
-        "When the measurement was made. Can be epoch, iterations, or dictionary of both.",
+        default=-1,
+        description="When the measurement was made. Can be epoch, iterations, or dictionary of both.",
     )
     measurements: List[ProbeData] = Field(
-        [], "List of all probe measurements at t=time."
+        default_factory=list, description="List of all probe measurements at t=time."
     )
 
 
@@ -36,7 +36,9 @@ class Trajectory(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=False)
 
-    data: List[Snapshot] = Field([], "List of all measurements made along time.")
+    data: List[Snapshot] = Field(
+        default_factory=list, description="List of all measurements made along time."
+    )
 
     @computed_field
     @property
@@ -56,7 +58,7 @@ class Trajectory(BaseModel):
 
         Example:
             >>> trajectory = Trajectory(data=[...])  # Contains mixed probe types
-            >>> objective_trajectory = trajectory.filter_by_probe_type(ObjectiveProbe)
+            >>> objective_trajectory = trajectory.select(ObjectiveProbe)
         """
         filtered_snapshots = []
 
