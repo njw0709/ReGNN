@@ -26,6 +26,8 @@ class EvaluationOptions(BaseModel):
     evaluation_function: Literal["stata", "statsmodels"] = Field(
         "statsmodels", description="Which evaluation function to use"
     )
+    evaluate: bool = Field(False, description="Whether to evaluate during training")
+    eval_epoch: int = Field(10, gt=0, description="Frequency of evaluation in epochs")
 
     @field_validator("regress_cmd")
     def validate_regress_cmd(cls, v: str) -> str:
