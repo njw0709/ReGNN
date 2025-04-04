@@ -8,9 +8,8 @@ class MLPConfig(BaseModel):
     """Base configuration for all neural network architectures"""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    hidden_layer_sizes: Union[List[int], List[List[int]]] = Field(
-        ..., description="Hidden layer sizes"
+    layer_input_sizes: Union[List[int], List[List[int]]] = Field(
+        ..., description="input sizes of the layers"
     )
     dropout: float = Field(0.0, ge=0.0, le=1.0, description="Dropout rate")
     device: str = Field("cpu", description="Device to run model on")
@@ -19,19 +18,16 @@ class MLPConfig(BaseModel):
     output_mu_var: bool = Field(
         False, description="Whether to output mean and variance"
     )
-    n_ensemble: int = Field(1, ge=1, description="Number of ensemble models")
+    ensemble: bool = Field(
+        False, description="Whether the model is a part of an ensemble"
+    )
 
-    @field_validator("hidden_layer_sizes")
-    def validate_hidden_layer_sizes(cls, v):
-        if isinstance(v, list):
-            if isinstance(v[0], list):
-                for hidden_layer_sizes in v:
-                    if hidden_layer_sizes[-1] != 1:
-                        raise ValueError("Last layer of hidden_layer_sizes must be 1")
-            else:
-                if v[-1] != 1:
-                    raise ValueError("Last layer of hidden_layer_sizes must be 1")
-        return v
+    @property
+    def hidden_layer_sizes(self) -> Union[List[int], List[List[int]]]:
+        """Computed property that returns layer_input_sizes with 1 appended to each list"""
+        if isinstance(self.layer_input_sizes[0], list):
+            return [sizes + [1] for sizes in self.layer_input_sizes]
+        return self.layer_input_sizes + [1]
 
 
 class SVDConfig(BaseModel):
@@ -58,6 +54,7 @@ class IndexPredictionConfig(MLPConfig):
     num_moderators: Union[int, List[int]] = Field(
         ..., description="Number of moderator variables"
     )
+    n_ensemble: int = Field(1, ge=1, description="Number of MLP models to ensemble")
     svd: SVDConfig = Field(default_factory=SVDConfig)
 
     @field_validator("svd")
@@ -74,7 +71,7 @@ class ReGNNConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # Core components
-    index_prediction: IndexPredictionConfig
+    nn_config: IndexPredictionConfig
     num_controlled: int = Field(..., gt=0, description="Number of controlled variables")
 
     # Additional settings
@@ -97,13 +94,30 @@ class ReGNNConfig(BaseModel):
         cls,
         num_moderators: Union[int, List[int]],
         num_controlled: int,
-        hidden_layer_sizes: Union[List[int], List[List[int]]],
+        layer_input_sizes: Union[List[int], List[List[int]]],
         **kwargs,
     ) -> "ReGNNConfig":
         """Factory method for creating ReGNN config with default values"""
-        index_prediction = IndexPredictionConfig(
-            num_moderators=num_moderators, hidden_layer_sizes=hidden_layer_sizes
+        # Parameters that should go to IndexPredictionConfig
+        nn_params = {
+            "dropout",
+            "device",
+            "batch_norm",
+            "vae",
+            "output_mu_var",
+            "ensemble",
+            "svd",
+            "k_dim",
+            "svd_matrix",
+        }
+
+        # Split kwargs between nn_config and main config
+        nn_kwargs = {k: v for k, v in kwargs.items() if k in nn_params}
+        main_kwargs = {k: v for k, v in kwargs.items() if k not in nn_params}
+
+        nn_config = IndexPredictionConfig(
+            num_moderators=num_moderators,
+            layer_input_sizes=layer_input_sizes,
+            **nn_kwargs,
         )
-        return cls(
-            index_prediction=index_prediction, num_controlled=num_controlled, **kwargs
-        )
+        return cls(nn_config=nn_config, num_controlled=num_controlled, **main_kwargs)

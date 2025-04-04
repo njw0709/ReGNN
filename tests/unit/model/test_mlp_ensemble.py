@@ -6,7 +6,7 @@ from regnn.model.regnn import MLPEnsemble
 
 def test_mlp_ensemble_without_vae():
     config = MLPConfig(layer_input_sizes=[10, 5], ensemble=True)
-    model = MLPEnsemble.from_config(config)
+    model = MLPEnsemble.from_config(config, n_ensemble=5)
     batch_size = 32
     input_tensor = torch.randn(batch_size, 10)
     output = model(input_tensor)
@@ -15,7 +15,7 @@ def test_mlp_ensemble_without_vae():
 
 def test_mlp_ensemble_with_vae_not_training():
     config = MLPConfig(layer_input_sizes=[10, 5], vae=True, ensemble=True)
-    model = MLPEnsemble.from_config(config)
+    model = MLPEnsemble.from_config(config, n_ensemble=5)
     model.eval()
     batch_size = 32
     input_tensor = torch.randn(batch_size, 10)
@@ -30,7 +30,7 @@ def test_mlp_ensemble_with_vae_training_output_mu_var_false():
     config = MLPConfig(
         layer_input_sizes=[10, 5], vae=True, ensemble=True, output_mu_var=False
     )
-    model = MLPEnsemble.from_config(config)
+    model = MLPEnsemble.from_config(config, n_ensemble=5)
     model.train()
     batch_size = 32
     input_tensor = torch.randn(batch_size, 10)
@@ -42,7 +42,7 @@ def test_mlp_ensemble_with_vae_training_output_mu_var_true():
     config = MLPConfig(
         layer_input_sizes=[10, 5], vae=True, ensemble=True, output_mu_var=True
     )
-    model = MLPEnsemble.from_config(config)
+    model = MLPEnsemble.from_config(config, n_ensemble=5)
     model.train()
     batch_size = 32
     input_tensor = torch.randn(batch_size, 10)

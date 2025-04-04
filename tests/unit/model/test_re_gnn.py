@@ -1,12 +1,14 @@
 import pytest
 import torch
 import numpy as np
-from regnn.model.base import ReGNNConfig
+from regnn.model.base import ReGNNConfig, SVDConfig
 from regnn.model.regnn import ReGNN
 
 
 def test_re_gnn_creation_basic():
-    config = ReGNNConfig(num_moderators=10, num_controlled=5, hidden_layer_sizes=[5, 1])
+    config = ReGNNConfig.create(
+        num_moderators=10, num_controlled=5, layer_input_sizes=[5, 1]
+    )
     model = ReGNN.from_config(config)
     assert isinstance(model, ReGNN)
     model.train()
@@ -19,10 +21,10 @@ def test_re_gnn_creation_basic():
 
 
 def test_re_gnn_creation_with_vae_and_output_mu_var_false():
-    config = ReGNNConfig(
+    config = ReGNNConfig.create(
         num_moderators=10,
         num_controlled=5,
-        hidden_layer_sizes=[5, 1],
+        layer_input_sizes=[5, 1],
         vae=True,
         output_mu_var=False,
     )
@@ -38,10 +40,10 @@ def test_re_gnn_creation_with_vae_and_output_mu_var_false():
 
 
 def test_re_gnn_creation_with_vae_and_output_mu_var_true():
-    config = ReGNNConfig(
+    config = ReGNNConfig.create(
         num_moderators=10,
         num_controlled=5,
-        hidden_layer_sizes=[5, 1],
+        layer_input_sizes=[5, 1],
         vae=True,
         output_mu_var=True,
     )
@@ -53,6 +55,8 @@ def test_re_gnn_creation_with_vae_and_output_mu_var_true():
     focal_predictor = torch.randn(batch_size)
     controlled_vars = torch.randn(batch_size, 5)
     output = model(moderators, focal_predictor, controlled_vars)
+    print(model.vae)
+    print(model.training)
     assert len(output) == 3
     assert output[0].shape == (batch_size, 1)
     assert output[1].shape == (batch_size, 1)
@@ -60,10 +64,10 @@ def test_re_gnn_creation_with_vae_and_output_mu_var_true():
 
 
 def test_re_gnn_creation_without_vae_and_output_mu_var_false():
-    config = ReGNNConfig(
+    config = ReGNNConfig.create(
         num_moderators=10,
         num_controlled=5,
-        hidden_layer_sizes=[5, 1],
+        layer_input_sizes=[5, 1],
         vae=False,
         output_mu_var=False,
     )
@@ -82,13 +86,11 @@ def test_re_gnn_creation_with_svd():
     num_moderators = 10
     k_dim = 5
     svd_matrix = np.random.rand(num_moderators, num_moderators).astype(np.float32)
-    config = ReGNNConfig(
+    config = ReGNNConfig.create(
         num_moderators=num_moderators,
         num_controlled=5,
-        hidden_layer_sizes=[5, 1],
-        svd=True,
-        svd_matrix=svd_matrix,
-        k_dim=k_dim,
+        layer_input_sizes=[5, 1],
+        svd=SVDConfig(enabled=True, svd_matrix=svd_matrix, k_dim=k_dim),
     )
     model = ReGNN.from_config(config)
     assert isinstance(model, ReGNN)
@@ -102,8 +104,8 @@ def test_re_gnn_creation_with_svd():
 
 
 def test_re_gnn_creation_with_multiple_moderators():
-    config = ReGNNConfig(
-        num_moderators=[5, 5], num_controlled=5, hidden_layer_sizes=[[3, 1], [3, 1]]
+    config = ReGNNConfig.create(
+        num_moderators=[5, 5], num_controlled=5, layer_input_sizes=[[3, 1], [3, 1]]
     )
     model = ReGNN.from_config(config)
     assert isinstance(model, ReGNN)
@@ -119,10 +121,10 @@ def test_re_gnn_creation_with_multiple_moderators():
 
 
 def test_re_gnn_creation_with_control_moderators():
-    config = ReGNNConfig(
+    config = ReGNNConfig.create(
         num_moderators=10,
         num_controlled=5,
-        hidden_layer_sizes=[5, 1],
+        layer_input_sizes=[5, 1],
         control_moderators=True,
     )
     model = ReGNN.from_config(config)
@@ -137,10 +139,10 @@ def test_re_gnn_creation_with_control_moderators():
 
 
 def test_re_gnn_creation_with_different_interaction_directions():
-    config = ReGNNConfig(
+    config = ReGNNConfig.create(
         num_moderators=10,
         num_controlled=5,
-        hidden_layer_sizes=[5, 1],
+        layer_input_sizes=[5, 1],
         interaction_direction="negative",
     )
     model = ReGNN.from_config(config)
@@ -155,10 +157,10 @@ def test_re_gnn_creation_with_different_interaction_directions():
 
 
 def test_re_gnn_creation_without_bias_for_focal_predictor():
-    config = ReGNNConfig(
+    config = ReGNNConfig.create(
         num_moderators=10,
         num_controlled=5,
-        hidden_layer_sizes=[5, 1],
+        layer_input_sizes=[5, 1],
         include_bias_focal_predictor=False,
     )
     model = ReGNN.from_config(config)
@@ -173,8 +175,8 @@ def test_re_gnn_creation_without_bias_for_focal_predictor():
 
 
 def test_re_gnn_creation_with_ensemble():
-    config = ReGNNConfig(
-        num_moderators=10, num_controlled=5, hidden_layer_sizes=[5, 1], n_ensemble=3
+    config = ReGNNConfig.create(
+        num_moderators=10, num_controlled=5, layer_input_sizes=[5, 1], n_ensemble=3
     )
     model = ReGNN.from_config(config)
     assert isinstance(model, ReGNN)

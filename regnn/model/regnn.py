@@ -79,9 +79,9 @@ class MLP(nn.Module):
 
 class MLPEnsemble(nn.Module):
     @classmethod
-    def from_config(cls, config: MLPConfig):
+    def from_config(cls, config: MLPConfig, n_ensemble):
         return cls(
-            n_models=config.n_ensemble,
+            n_models=n_ensemble,
             layer_input_sizes=config.layer_input_sizes,
             vae=config.vae,
             dropout=config.dropout,
@@ -144,9 +144,9 @@ class IndexPredictionModel(nn.Module):
         return cls(
             num_moderators=config.num_moderators,
             hidden_layer_sizes=config.hidden_layer_sizes,
-            svd=config.svd,
-            svd_matrix=config.svd_matrix,
-            k_dim=config.k_dim,
+            svd=config.svd.enabled,
+            svd_matrix=config.svd.svd_matrix,
+            k_dim=config.svd.k_dim,
             batch_norm=config.batch_norm,
             vae=config.vae,
             device=config.device,
@@ -346,21 +346,21 @@ class ReGNN(nn.Module):
     @classmethod
     def from_config(cls, config: ReGNNConfig):
         return cls(
-            num_moderators=config.num_moderators,
+            num_moderators=config.nn_config.num_moderators,
             num_controlled=config.num_controlled,
-            hidden_layer_sizes=config.hidden_layer_sizes,
+            hidden_layer_sizes=config.nn_config.hidden_layer_sizes,
             include_bias_focal_predictor=config.include_bias_focal_predictor,
-            dropout=config.dropout,
-            svd=config.svd,
-            svd_matrix=config.svd_matrix,
-            k_dim=config.k_dim,
-            device=config.device,
+            dropout=config.nn_config.dropout,
+            svd=config.nn_config.svd.enabled,
+            svd_matrix=config.nn_config.svd.svd_matrix,
+            k_dim=config.nn_config.svd.k_dim,
+            device=config.nn_config.device,
             control_moderators=config.control_moderators,
-            batch_norm=config.batch_norm,
-            vae=config.vae,
-            output_mu_var=config.output_mu_var,
+            batch_norm=config.nn_config.batch_norm,
+            vae=config.nn_config.vae,
+            output_mu_var=config.nn_config.output_mu_var,
             interaction_direction=config.interaction_direction,
-            n_ensemble=config.n_ensemble,
+            n_ensemble=config.nn_config.n_ensemble,
         )
 
     def __init__(
