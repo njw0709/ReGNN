@@ -18,7 +18,6 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin):
         df, df_orig = self._initial_processing(df, config.df_dtypes, config.rename_dict)
         self.df_orig = df_orig
         super().__init__(df, config)
-        # self.mean_std_dict = mean_std_dict # move to processing_step
 
     def _initial_processing(
         self, df: pd.DataFrame, df_dtypes: Dict[str, str], rename_dict: Dict[str, str]
