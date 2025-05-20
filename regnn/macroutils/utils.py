@@ -3,33 +3,8 @@ from regnn.model.regnn import ReGNN
 from typing import Dict, List, Optional, Union
 import os
 from regnn.constants import TEMP_DIR
-
-
-def get_gradient_norms(model: ReGNN) -> Dict[str, List[float]]:
-    """Calculate gradient norms for model parameters"""
-    grad_norms = {}
-    main_parameters = [model.focal_predictor_main_weight, model.predicted_index_weight]
-    main_parameters += [p for p in model.controlled_var_weights.parameters()]
-    grad_main = [p.grad.norm(2).item() for p in main_parameters]
-    index_model_params = [p for p in model.index_prediction_model.parameters()]
-    grad_index = [p.grad.norm(2).item() for p in index_model_params]
-    grad_norms["main"] = grad_main
-    grad_norms["index"] = grad_index
-    return grad_norms
-
-
-def get_l2_length(model: ReGNN) -> Dict[str, float]:
-    """Calculate L2 norms for model parameters"""
-    l2_lengths = {}
-    main_parameters = [model.focal_predictor_main_weight, model.predicted_index_weight]
-    main_parameters += [p for p in model.controlled_var_weights.parameters()][:-1]
-    main_parameters = torch.cat(main_parameters, dim=1)
-    main_param_l2 = main_parameters.norm(2).item()
-
-    index_norm = model.predicted_index_weight.norm(2).item()
-    l2_lengths["main"] = main_param_l2
-    l2_lengths["index"] = index_norm
-    return l2_lengths
+import pandas as pd
+import numpy as np
 
 
 def save_model(
@@ -64,15 +39,6 @@ def save_model(
     return model_name
 
 
-def save_regnn(
-    model: ReGNN,
-    save_dir: str = os.path.join(TEMP_DIR, "checkpoints"),
-    data_id: Optional[str] = None,
-) -> None:
-    """Save ReGNN model to disk"""
-    save_model(model, model_type="regnn", save_dir=save_dir, data_id=data_id)
-
-
 def load_model(
     model: torch.nn.Module,
     model_path: str,
@@ -90,3 +56,44 @@ def load_model(
     """
     model.load_state_dict(torch.load(model_path, map_location=map_location))
     return model
+
+
+def compute_index_prediction(
+    model: ReGNN, interaction_predictors: torch.Tensor
+) -> np.ndarray:
+
+    index_model = model.index_prediction_model
+    index_model.to(interaction_predictors.device).eval()
+    if index_model.vae:
+        index_prediction, log_var = index_model(interaction_predictors)
+    else:
+        index_prediction = index_model(interaction_predictors)
+    index_prediction = index_prediction.detach().cpu().numpy()
+
+    return index_prediction
+
+
+def save_intermediate_df(
+    df_orig: pd.DataFrame,
+    index_predictions: np.ndarray,
+    output_index_name: str,
+    save_dir: str = os.path.join(TEMP_DIR, "data"),
+    data_id: Union[str, None] = None,
+    interaction_direction: str = "positive",
+):
+    if data_id is not None:
+        save_path = os.path.join(save_dir, f"index_prediction_{data_id}.dta")
+    else:
+        num_files = len(os.listdir(save_dir))
+        save_path = os.path.join(save_dir, f"index_prediction_{num_files}.dta")
+    # save to file
+    if interaction_direction == "positive":
+        output_index_name = "res_index"
+    elif interaction_direction == "negative":
+        output_index_name = "vul_index"
+    else:
+        raise ValueError("interaction Direction must either be positive or negative!!")
+
+    df_orig[output_index_name] = index_predictions
+    df_orig.to_stata(save_path, write_index=False)
+    return True

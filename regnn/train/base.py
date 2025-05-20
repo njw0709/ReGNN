@@ -1,29 +1,6 @@
-from typing import Optional, List
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from typing import Optional
+from pydantic import BaseModel, Field, ConfigDict
 import torch
-from regnn.eval.base import EvaluationOptions
-from regnn.model.base import ReGNNConfig
-
-
-class TrainingHyperParams(BaseModel):
-    """Training specific hyperparameters"""
-
-    model_config = ConfigDict(arbitrary_types_allowed=False)
-
-    epochs: int = Field(100, gt=0, description="Number of training epochs")
-    batch_size: int = Field(32, gt=0, description="Training batch size")
-    lr: float = Field(0.001, gt=0.0, description="Learning rate")
-    weight_decay_regression: float = Field(
-        0.0, ge=0.0, description="L2 regularization weight for regression"
-    )
-    weight_decay_nn: float = Field(
-        0.0, ge=0.0, description="L2 regularization weight for neural network"
-    )
-    device: str = Field(
-        "cuda" if torch.cuda.is_available() else "cpu",
-        description="Device to run model on",
-    )
-    shuffle: bool = Field(True, description="Whether to shuffle training data")
 
 
 class EarlyStoppingConfig(BaseModel):
@@ -38,7 +15,49 @@ class EarlyStoppingConfig(BaseModel):
     )
 
 
-class OutputOptions(BaseModel):
+class LossOptions(BaseModel):
+    """Configuration for loss function and regularization"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
+    weight_decay_regression: float = Field(
+        0.0, ge=0.0, description="L2 regularization weight for regression"
+    )
+    weight_decay_nn: float = Field(
+        0.0, ge=0.0, description="L2 regularization weight for neural network"
+    )
+    use_survey_weights: bool = Field(
+        False,
+        description="Whether to use survey weights. If true, weighted MSE is used as objective.",
+    )
+
+
+class TrainingHyperParams(BaseModel):
+    """Training specific hyperparameters"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
+    epochs: int = Field(100, gt=0, description="Number of training epochs")
+    batch_size: int = Field(32, gt=0, description="Training batch size")
+    lr: float = Field(0.001, gt=0.0, description="Learning rate")
+    device: str = Field(
+        "cuda" if torch.cuda.is_available() else "cpu",
+        description="Device to run model on",
+    )
+    shuffle: bool = Field(True, description="Whether to shuffle training data")
+
+    stopping_options: Optional[EarlyStoppingConfig] = Field(
+        default=None,
+        description="Optional early stopping configuration. If None, early stopping will be disabled.",
+    )
+
+    loss_options: LossOptions = Field(
+        default_factory=LossOptions,
+        description="Configuration for loss function and regularization",
+    )
+
+
+class ProbeOptions(BaseModel):
     """Configuration for output and saving behavior"""
 
     model_config = ConfigDict(arbitrary_types_allowed=False)
@@ -59,28 +78,3 @@ class OutputOptions(BaseModel):
         True, description="Whether to compute results on test set"
     )
     get_l2_lengths: bool = Field(True, description="Whether to compute L2 norms")
-
-
-class TrainingConfig(BaseModel):
-    """Configuration for ReGNN training"""
-
-    model_config = ConfigDict(arbitrary_types_allowed=False)
-
-    # Core configurations
-    model: ReGNNConfig = Field(..., description="Model configuration")
-    training: TrainingHyperParams = Field(
-        default_factory=TrainingHyperParams, description="Training hyperparameters"
-    )
-    evaluation: EvaluationOptions = Field(..., description="Evaluation configuration")
-    early_stopping: EarlyStoppingConfig = Field(
-        default_factory=EarlyStoppingConfig, description="Early stopping configuration"
-    )
-    output: OutputOptions = Field(
-        default_factory=OutputOptions, description="Output and saving configuration"
-    )
-
-    # Additional settings
-    survey_weights: bool = Field(
-        False,
-        description="Whether to use survey weights. If true, weighted MSE is used as objective.",
-    )

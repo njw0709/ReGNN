@@ -18,7 +18,7 @@ class FocalPredictorPreProcessOptions(BaseModel):
         "positive", description="Direction of interaction effect"
     )
 
-    def create_processor(self) -> Callable[[T], T]:
+    def create_preprocessor(self) -> Callable[[T], T]:
         """
         Creates a function that processes model outputs according to the specified options.
         Supports both numpy arrays and PyTorch tensors.
@@ -78,6 +78,9 @@ class EvaluationOptions(BaseModel):
         ),
         description="Sets how to preprocess focal predictor",
     )
+    index_column_name: str = Field(
+        "summary_index", description="name of the produced summary index"
+    )
 
     @field_validator("regress_cmd")
     def validate_regress_cmd(cls, v: str) -> str:
@@ -89,35 +92,3 @@ class EvaluationOptions(BaseModel):
                 "regress_cmd must have at least 3 parts: command, dependent var, and independent var"
             )
         return v
-
-    # @field_validator("index_predictions")
-    # def validate_index_predictions(cls, v: np.ndarray) -> np.ndarray:
-    #     if v.ndim != 1:
-    #         raise ValueError("index_predictions must be 1-dimensional")
-    #     return v
-
-
-# class ReGNNEvalInput(EvaluationOptions):
-#     """Input configuration for ReGNN evaluation"""
-
-#     model: ReGNN = Field(..., description="ReGNN model to evaluate")
-#     test_dataset: ReGNNDataset = Field(..., description="Test dataset for evaluation")
-#     device: str = Field(
-#         "cuda" if torch.cuda.is_available() else "cpu",
-#         description="Device to run model on",
-#     )
-#     quietly: bool = Field(True, description="Whether to suppress Stata output")
-
-#     @field_validator("device")
-#     def validate_device(cls, v: str) -> str:
-#         if v not in ["cuda", "cpu"]:
-#             raise ValueError("device must be either 'cuda' or 'cpu'")
-#         if v == "cuda" and not torch.cuda.is_available():
-#             return "cpu"
-#         return v
-
-#     @field_validator("test_dataset")
-#     def validate_test_dataset(cls, v: ReGNNDataset) -> ReGNNDataset:
-#         if len(v) == 0:
-#             raise ValueError("test_dataset cannot be empty")
-#         return v

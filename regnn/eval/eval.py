@@ -3,7 +3,7 @@ import pandas as pd
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools.tools import add_constant
-from regnn.probe.regression import (
+from regnn.probe.dataclass.regression import (
     OLSModeratedResultsProbe,
     VarianceInflationFactorProbe,
 )
@@ -11,13 +11,18 @@ from .utils import init_stata
 
 
 def OLS_stata(
-    df: pd.DataFrame, regress_cmd: str, data_source: str = "test", quietly: bool = True
+    df: pd.DataFrame,
+    regress_cmd: str,
+    data_source: str = "test",
+    quietly: bool = True,
+    df_already_moved: bool = False,
 ) -> OLSModeratedResultsProbe:
     """Original Stata-based significance evaluation"""
     stata = init_stata()
 
     # move df to stata
-    stata.pdataframe_to_data(df, force=True)
+    if not df_already_moved:
+        stata.pdataframe_to_data(df, force=True)
     stata.run(regress_cmd, quietly=quietly)
     regression_results = stata.get_return()
     eresults = stata.get_ereturn()

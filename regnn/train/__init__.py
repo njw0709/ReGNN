@@ -1,6 +1,6 @@
-from .trainer import train_regnn
+from ..macroutils.trainer import train_regnn
 from .base import TrainingConfig, TrajectoryData
-from .utils import save_regnn, load_model, save_model
+from ..macroutils.utils import save_regnn, load_model, save_model
 
 __all__ = [
     "train_regnn",
