@@ -1,0 +1,279 @@
+{
+    "read_config": {
+        "data_path": "/home/namj/projects/ReGNN/notebooks/simulatedv3.dta",
+        "read_cols": [
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5",
+            "x6",
+            "x7",
+            "x8",
+            "x9",
+            "x10",
+            "x11",
+            "x12",
+            "x13",
+            "x14",
+            "x15",
+            "bin1",
+            "bin2",
+            "bin3",
+            "bin4",
+            "bin5",
+            "bin6",
+            "bin7",
+            "bin8",
+            "bin9",
+            "bin10",
+            "cat1",
+            "cat2",
+            "cat3",
+            "cat4",
+            "cat5",
+            "T",
+            "Y"
+        ],
+        "rename_dict": {},
+        "binary_cols": [
+            "bin1",
+            "bin2",
+            "bin3",
+            "bin4",
+            "bin5",
+            "bin6",
+            "bin7",
+            "bin8",
+            "bin9",
+            "bin10"
+        ],
+        "categorical_cols": [
+            "cat1",
+            "cat2",
+            "cat3",
+            "cat4",
+            "cat5"
+        ],
+        "ordinal_cols": [],
+        "continuous_cols": [
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5",
+            "x6",
+            "x7",
+            "x8",
+            "x9",
+            "x10",
+            "x11",
+            "x12",
+            "x13",
+            "x14",
+            "x15",
+            "T",
+            "Y"
+        ],
+        "survey_weight_col": null,
+        "df_dtypes": {
+            "category": [
+                "cat1",
+                "cat2",
+                "cat3",
+                "cat4",
+                "cat5"
+            ],
+            "binary": [
+                "bin1",
+                "bin2",
+                "bin3",
+                "bin4",
+                "bin5",
+                "bin6",
+                "bin7",
+                "bin8",
+                "bin9",
+                "bin10"
+            ],
+            "continuous": [
+                "x1",
+                "x2",
+                "x3",
+                "x4",
+                "x5",
+                "x6",
+                "x7",
+                "x8",
+                "x9",
+                "x10",
+                "x11",
+                "x12",
+                "x13",
+                "x14",
+                "x15",
+                "T",
+                "Y"
+            ]
+        },
+        "preprocess_steps": [
+            {
+                "columns": [
+                    "bin1",
+                    "bin2",
+                    "bin3",
+                    "bin4",
+                    "bin5",
+                    "bin6",
+                    "bin7",
+                    "bin8",
+                    "bin9",
+                    "bin10"
+                ],
+                "function": "binary_to_one_hot",
+                "reverse_transform_info": {}
+            },
+            {
+                "columns": [
+                    "cat1",
+                    "cat2",
+                    "cat3",
+                    "cat4",
+                    "cat5"
+                ],
+                "function": "multi_cat_to_one_hot",
+                "reverse_transform_info": {}
+            },
+            {
+                "columns": [],
+                "function": "convert_categorical_to_ordinal",
+                "reverse_transform_info": {}
+            },
+            {
+                "columns": [
+                    "x1",
+                    "x2",
+                    "x3",
+                    "x4",
+                    "x5",
+                    "x6",
+                    "x7",
+                    "x8",
+                    "x9",
+                    "x10",
+                    "x11",
+                    "x12",
+                    "x13",
+                    "x14",
+                    "x15",
+                    "T",
+                    "Y"
+                ],
+                "function": "standardize_cols",
+                "reverse_transform_info": {}
+            }
+        ]
+    },
+    "regression": {
+        "focal_predictor": "T",
+        "outcome_col": "Y",
+        "controlled_cols": [],
+        "moderators": [
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5",
+            "x6",
+            "x7",
+            "x8",
+            "x9",
+            "x10",
+            "x11",
+            "x12",
+            "x13",
+            "x14",
+            "x15",
+            "bin1",
+            "bin2",
+            "bin3",
+            "bin4",
+            "bin5",
+            "bin6",
+            "bin7",
+            "bin8",
+            "bin9",
+            "bin10",
+            "cat1",
+            "cat2",
+            "cat3",
+            "cat4",
+            "cat5"
+        ],
+        "index_column_name": "vul_index"
+    },
+    "model": {
+        "nn_config": {
+            "layer_input_sizes": [
+                64,
+                32
+            ],
+            "dropout": 0.1,
+            "device": "cuda",
+            "batch_norm": true,
+            "vae": false,
+            "output_mu_var": false,
+            "ensemble": false,
+            "num_moderators": 35,
+            "n_ensemble": 1,
+            "svd": {
+                "enabled": false,
+                "k_dim": 10,
+                "svd_matrix": null
+            }
+        },
+        "num_controlled": 0,
+        "include_bias_focal_predictor": true,
+        "control_moderators": false,
+        "interaction_direction": "positive"
+    },
+    "training": {
+        "epochs": 50,
+        "batch_size": 256,
+        "lr": 0.001,
+        "device": "cuda",
+        "shuffle": true,
+        "train_test_split_ratio": 0.8,
+        "train_test_split_seed": 42,
+        "stopping_options": null,
+        "loss_options": {
+            "name": "MSE",
+            "reduction": "mean",
+            "regularization": null
+        }
+    },
+    "probe": {
+        "save_dir": "./output_models",
+        "file_id": "01",
+        "save_model": false,
+        "save_model_epochs": 10,
+        "model_save_name": "sim_regnn_model_T_Y",
+        "save_intermediate_index": false,
+        "regression_eval_opts": {
+            "regress_cmd": "regress Y c.T c.T#c.vul_index c.x1 c.x2 c.x3 c.x4 c.x5 c.x6 c.x7 c.x8 c.x9 c.x10 c.x11 c.x12 c.x13 c.x14 c.x15 i.bin1 i.bin2 i.bin3 i.bin4 i.bin5 i.bin6 i.bin7 i.bin8 i.bin9 i.bin10 i.cat1 i.cat2 i.cat3 i.cat4 i.cat5",
+            "evaluation_function": "stata",
+            "evaluate": true,
+            "eval_epochs": 5,
+            "focal_predictor_process_options": {
+                "threshold": false,
+                "thresholded_value": 0.0,
+                "interaction_direction": "positive"
+            },
+            "index_column_name": "vul_index",
+            "post_training_eval": true
+        },
+        "return_trajectory": true,
+        "get_testset_results": true,
+        "get_l2_lengths": true
+    }
+}

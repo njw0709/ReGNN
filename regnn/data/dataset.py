@@ -38,116 +38,53 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
 
         return df, df_orig
 
+    def _to_tensor(self, value, dtype=None) -> torch.Tensor:
+        """Convert a value to a tensor with proper shape."""
+        if dtype is None:
+            dtype = self.dtype
+        return torch.tensor(np.array([value]), dtype=dtype).to(self.device)
+
+    def _to_numpy(self, value, dtype=None) -> np.ndarray:
+        """Convert a value to a numpy array with proper shape."""
+        if dtype is None:
+            dtype = self.dtype
+        return np.array([value]).astype(dtype)
+
+    def _get_item_value(self, key: str, idx: int, as_tensor: bool = True):
+        """Get a single item value, either as tensor or numpy array."""
+        value = self.df[key].iloc[idx]
+        return self._to_tensor(value) if as_tensor else self._to_numpy(value)
+
+    def _get_moderators(self, idx: int, as_tensor: bool = True):
+        """Get moderators, handling both list and non-list cases."""
+        if isinstance(self.config.moderators[0], list):
+            return [
+                self._get_item_value(i_p, idx, as_tensor)
+                for i_p in self.config.moderators
+            ]
+        else:
+            return self._get_item_value(self.config.moderators, idx, as_tensor)
+
     def __getitem__(self, idx: int) -> Dict[str, Union[np.ndarray, torch.Tensor]]:
-        if self.output_mode == "tensor":
-            if isinstance(self.config.moderators[0], list):
-                return {
-                    "focal_predictor": torch.tensor(
-                        self.df[self.config.focal_predictor].iloc[idx].values,
-                        dtype=self.dtype,
-                    ).to(self.device),
-                    "controlled_predictors": torch.tensor(
-                        self.df[self.config.controlled_predictors].iloc[idx].values,
-                        dtype=self.dtype,
-                    ).to(self.device),
-                    "moderators": [
-                        torch.tensor(
-                            self.df[i_p].iloc[idx].values, dtype=self.dtype
-                        ).to(self.device)
-                        for i_p in self.config.moderators
-                    ],
-                    "outcome": torch.tensor(
-                        self.df[self.config.outcome].iloc[idx].values, dtype=self.dtype
-                    ).to(self.device),
-                    **(
-                        {
-                            "weights": torch.tensor(
-                                self.df[self.config.survey_weights].iloc[idx].values,
-                                dtype=self.dtype,
-                            ).to(self.device)
-                        }
-                        if self.config.survey_weights is not None
-                        else {}
-                    ),
-                }
-            else:
-                return {
-                    "focal_predictor": torch.tensor(
-                        self.df[self.config.focal_predictor].iloc[idx].values,
-                        dtype=self.dtype,
-                    ).to(self.device),
-                    "controlled_predictors": torch.tensor(
-                        self.df[self.config.controlled_predictors].iloc[idx].values,
-                        dtype=self.dtype,
-                    ).to(self.device),
-                    "moderators": torch.tensor(
-                        self.df[self.config.moderators].iloc[idx].values,
-                        dtype=self.dtype,
-                    ).to(self.device),
-                    "outcome": torch.tensor(
-                        self.df[self.config.outcome].iloc[idx].values, dtype=self.dtype
-                    ).to(self.device),
-                    **(
-                        {
-                            "weights": torch.tensor(
-                                self.df[self.config.survey_weights].iloc[idx].values,
-                                dtype=self.dtype,
-                            ).to(self.device)
-                        }
-                        if self.config.survey_weights is not None
-                        else {}
-                    ),
-                }
-        else:  # numpy mode
-            if isinstance(self.config.moderators[0], list):
-                return {
-                    "focal_predictor": self.df[self.config.focal_predictor]
-                    .iloc[idx]
-                    .values.astype(self.dtype),
-                    "controlled_predictors": self.df[self.config.controlled_predictors]
-                    .iloc[idx]
-                    .values.astype(self.dtype),
-                    "moderators": [
-                        self.df[i_p].iloc[idx].values.astype(self.dtype)
-                        for i_p in self.config.moderators
-                    ],
-                    "outcome": self.df[self.config.outcome]
-                    .iloc[idx]
-                    .values.astype(self.dtype),
-                    **(
-                        {
-                            "weights": self.df[self.config.survey_weights]
-                            .iloc[idx]
-                            .values.astype(self.dtype)
-                        }
-                        if self.config.survey_weights is not None
-                        else {}
-                    ),
-                }
-            else:
-                return {
-                    "focal_predictor": self.df[self.config.focal_predictor]
-                    .iloc[idx]
-                    .values.astype(self.dtype),
-                    "controlled_predictors": self.df[self.config.controlled_predictors]
-                    .iloc[idx]
-                    .values.astype(self.dtype),
-                    "moderators": self.df[self.config.moderators]
-                    .iloc[idx]
-                    .values.astype(self.dtype),
-                    "outcome": self.df[self.config.outcome]
-                    .iloc[idx]
-                    .values.astype(self.dtype),
-                    **(
-                        {
-                            "weights": self.df[self.config.survey_weights]
-                            .iloc[idx]
-                            .values.astype(self.dtype)
-                        }
-                        if self.config.survey_weights is not None
-                        else {}
-                    ),
-                }
+        as_tensor = self.output_mode == "tensor"
+
+        result = {
+            "focal_predictor": self._get_item_value(
+                self.config.focal_predictor, idx, as_tensor
+            ),
+            "controlled_predictors": self._get_item_value(
+                self.config.controlled_predictors, idx, as_tensor
+            ),
+            "moderators": self._get_moderators(idx, as_tensor),
+            "outcome": self._get_item_value(self.config.outcome, idx, as_tensor),
+        }
+
+        if self.config.survey_weights is not None:
+            result["weights"] = self._get_item_value(
+                self.config.survey_weights, idx, as_tensor
+            )
+
+        return result
 
     def __repr__(self):
         return f"ReGNNDataset with {len(self)} samples"

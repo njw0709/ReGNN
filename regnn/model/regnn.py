@@ -495,6 +495,8 @@ class ReGNN(nn.Module):
         outcome = (
             controlled_term + focal_predictor_main_effect + predicted_interaction_term
         )
+        # Reshape outcome to match expected target shape [batch_size, 1]
+        outcome = outcome.squeeze(-1)
         if self.vae:
             if not self.training:
                 return outcome

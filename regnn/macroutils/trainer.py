@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader
 
-from regnn.data import train_test_split
+from regnn.data import train_test_split, ReGNNDataset
 from regnn.model import ReGNN
 from regnn.train import KLDLossConfig, process_epoch
 from regnn.probe import (
@@ -17,7 +17,6 @@ from regnn.probe import (
 )
 
 from .base import MacroConfig  # The main configuration object
-from .preprocess import preprocess  # For data loading and preprocessing
 from .evaluator import (
     regression_eval_regnn,
 )
@@ -29,6 +28,7 @@ from .utils import (
 
 
 def train(
+    all_dataset: ReGNNDataset,
     macro_config: MacroConfig,
 ) -> Union[Tuple[ReGNN, List[Trajectory]], ReGNN]:
     """
@@ -47,10 +47,6 @@ def train(
     training_hp = macro_config.training
     probe_opts = macro_config.probe
     regression_eval_opts = probe_opts.regression_eval_opts
-
-    # 1. Preprocessing
-    # The preprocess function now takes DataFrameReadInConfig and ModeratedRegressionConfig directly.
-    all_dataset = preprocess(read_config=read_cfg, regression_config=regression_cfg)
 
     # 2. Data Splitting
     train_indices, test_indices = train_test_split(
@@ -87,14 +83,12 @@ def train(
     # ReGNNConfig (regnn_cfg.nn_config.num_moderators) is assumed to be the source of truth for num_moderators,
     # validated upstream (e.g., in MacroConfig) for consistency with n_ensemble and dataset moderator structure.
     model = ReGNN.from_config(
-        model_config=regnn_cfg,
+        regnn_cfg,
     )
     if training_hp.device == "cuda":
         model.cuda()
 
-    loss_func, regularization, optimizer = setup_loss_and_optimizer(
-        model, training_hp, regnn_cfg  # regnn_cfg is macro_config.model
-    )
+    loss_func, regularization, optimizer = setup_loss_and_optimizer(model, training_hp)
 
     # 4. DataLoader
     dataloader = DataLoader(
@@ -169,7 +163,7 @@ def train(
         test_epoch_snapshot: Optional[Snapshot] = None
         test_batch_trajectory: Optional[Trajectory] = None
 
-        if training_hp.get_testset_results and test_dataloader:
+        if probe_opts.get_testset_results and test_dataloader:
 
             test_epoch_snapshot, test_batch_trajectory = process_epoch(
                 model=model,
@@ -236,15 +230,13 @@ def train(
                 device=training_hp.device,
                 data_source="train",
             )
-            train_p_val = train_ols_results.interaction_term_p_value
+            train_p_val = train_ols_results.interaction_pval
             printout += f" | Train P-val: {train_p_val:.4f}"
 
             # Add regression results to train trajectory
             if probe_opts.return_trajectory:
-                train_epoch_snapshot.add(OLSModeratedResultsProbe, train_ols_results)
-                train_epoch_snapshot.add(
-                    VarianceInflationFactorProbe, train_vif_results
-                )
+                train_epoch_snapshot.add(train_ols_results)
+                train_epoch_snapshot.add(train_vif_results)
 
             # Evaluate on test data if available
             test_ols_results = None
@@ -257,24 +249,20 @@ def train(
                     device=training_hp.device,
                     data_source="test",
                 )
-                test_p_val = test_ols_results.interaction_term_p_value
+                test_p_val = test_ols_results.interaction_pval
                 printout += f" | Test P-val: {test_p_val:.4f}"
 
                 # Add regression results to test trajectory
                 if probe_opts.return_trajectory and test_epoch_snapshot:
-                    test_epoch_snapshot.add(OLSModeratedResultsProbe, test_ols_results)
-                    test_epoch_snapshot.add(
-                        VarianceInflationFactorProbe, test_vif_results
-                    )
+                    test_epoch_snapshot.add(test_ols_results)
+                    test_epoch_snapshot.add(test_vif_results)
 
             # Early stopping check
             if training_hp.stopping_options and training_hp.stopping_options.enabled:
                 stop_opts = training_hp.stopping_options
                 p_val_train = train_p_val
                 p_val_test = (
-                    test_ols_results.interaction_term_p_value
-                    if test_ols_results
-                    else 1.0
+                    test_ols_results.interaction_pval if test_ols_results else 1.0
                 )
 
                 if (
@@ -301,9 +289,9 @@ def train(
             data_source="all",
         )
         final_summary = {
-            "interaction term p value": final_ols_results.interaction_term_p_value,
-            "interaction term coefficient": final_ols_results.interaction_term_coefficient,
-            "vif": final_vif_results.vif_value,
+            "interaction term p value": final_ols_results.interaction_pval,
+            # "interaction term coefficient": final_ols_results.,
+            "vif": final_vif_results.vif_interaction,
         }
         print(f"Final evaluation summary: {final_summary}")
 

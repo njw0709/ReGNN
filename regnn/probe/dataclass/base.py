@@ -62,6 +62,20 @@ class Snapshot(BaseModel):
         """
         return [m for m in self.measurements if isinstance(m, probe_type)]
 
+    def add(self, measurement: ProbeData) -> None:
+        """
+        Add a new measurement to the snapshot.
+
+        Args:
+            measurement: The probe data instance to add to measurements
+
+        Example:
+            >>> snapshot = Snapshot(time=1)
+            >>> probe_data = ObjectiveProbe(loss=0.5, data_source="train")
+            >>> snapshot.add(probe_data)
+        """
+        self.measurements.append(measurement)
+
 
 class Trajectory(BaseModel):
     """Data structure for trajectory of measurements.

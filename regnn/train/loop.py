@@ -246,7 +246,11 @@ def process_epoch(
     with torch.set_grad_enabled(is_training):  # Manage gradient calculation context
         for batch_idx, sample in enumerate(dataloader):
             # Move sample to device if not already done by DataLoader
-            # sample = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in sample.items()}
+            if device != "cpu":
+                sample = {
+                    k: v.to(device) if isinstance(v, torch.Tensor) else v
+                    for k, v in sample.items()
+                }
 
             batch_snapshot = process_iteration(
                 model=model,

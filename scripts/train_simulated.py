@@ -5,6 +5,7 @@ from regnn.macroutils import (
     MacroConfig,
     ModeratedRegressionConfig,
     generate_stata_command,
+    train,
 )
 from regnn.data import DataFrameReadInConfig
 from regnn.model import ReGNNConfig, SVDConfig
@@ -16,6 +17,7 @@ from regnn.train import (
     EarlyStoppingConfig,
     WeightDecayConfig,
 )
+from regnn.macroutils import preprocess  # For data loading and preprocessing
 
 
 def main():
@@ -52,16 +54,24 @@ def main():
         outcome_col="Y",
         controlled_cols=[],  # controlled variables that are not moderators.
         moderators=moderator_cols,
-        index_col_name="vul_index",
+        index_column_name="vul_index",
+    )
+
+    # 1. Preprocessing
+    # The preprocess function now takes DataFrameReadInConfig and ModeratedRegressionConfig directly.
+    all_dataset = preprocess(
+        read_config=read_config, regression_config=regression_config
     )
 
     # 3. ReGNNConfig
     regnn_model_config = ReGNNConfig.create(
-        num_moderators=len(regression_config.moderators),
+        num_moderators=len(
+            all_dataset.config.moderators
+        ),  # make sure to compute the number of moderators after processing
         num_controlled=len(regression_config.controlled_cols),
         layer_input_sizes=[64, 32],
         dropout=0.1,
-        device="cpu",
+        device="cuda",
         batch_norm=True,
         vae=False,
         output_mu_var=False,
@@ -85,7 +95,7 @@ def main():
                 weight_decay_nn=0.01, weight_decay_regression=0.0
             ),
         ),
-        device="cpu",
+        device="cuda",
     )
 
     # 5. ProbeOptions
@@ -100,6 +110,7 @@ def main():
             evaluate=True,
             eval_epochs=5,
             regress_cmd=generate_stata_command(read_config, regression_config),
+            index_column_name=regression_config.index_column_name,
         ),
         return_trajectory=True,
         get_testset_results=True,
@@ -118,21 +129,21 @@ def main():
     with open("/home/namj/projects/ReGNN/scripts/configs.json", "w") as f:
         f.write(macro_config.model_dump_json(indent=4))
 
-    # # Run training
-    # training_output = train(macro_config)
+    # Run training
+    training_output = train(all_dataset, macro_config)
 
-    # if probe_opts.return_trajectory:
-    #     model, train_trajectory, test_trajectory = training_output
-    #     print("Training complete. Model and trajectories returned.")
-    #     if train_trajectory:
-    #         print("Last training snapshot:", train_trajectory[-1])
-    #     if test_trajectory:
-    #         print("Last test snapshot:", test_trajectory[-1])
-    # else:
-    #     model = training_output
-    #     print("Training complete. Model returned.")
+    if probe_opts.return_trajectory:
+        model, train_trajectory, test_trajectory = training_output
+        print("Training complete. Model and trajectories returned.")
+        if train_trajectory:
+            print("Last training snapshot:", train_trajectory[-1])
+        if test_trajectory:
+            print("Last test snapshot:", test_trajectory[-1])
+    else:
+        model = training_output
+        print("Training complete. Model returned.")
 
-    # print("Script finished.")
+    print("Script finished.")
 
 
 if __name__ == "__main__":

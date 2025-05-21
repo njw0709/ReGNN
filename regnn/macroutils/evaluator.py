@@ -79,7 +79,7 @@ def regression_eval_regnn(
 
     # append index_predictions to test_df
     col_name = eval_options.index_column_name
-    test_df[col_name] = index_predictions.cpu().numpy()
+    test_df[col_name] = index_predictions
 
     # Assign evaluation functions based on evaluation_function
     ols_func: Callable[..., OLSModeratedResultsProbe] = (
@@ -100,6 +100,7 @@ def regression_eval_regnn(
     vif_results = vif_func(
         df=test_df,
         data_source=data_source,
+        df_already_moved=True,
     )
 
     return ols_results, vif_results

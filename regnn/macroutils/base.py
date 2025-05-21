@@ -12,7 +12,7 @@ class ModeratedRegressionConfig(BaseModel):
     outcome_col: str
     controlled_cols: List[str]
     moderators: List[str]
-    index_col_name: Union[str, List[str]]
+    index_column_name: Union[str, List[str]]
 
 
 class MacroConfig(BaseModel):
@@ -120,3 +120,19 @@ class MacroConfig(BaseModel):
             )
 
         return data
+
+    @model_validator(mode="after")
+    def validate_index_consistency(self) -> "MacroConfig":
+        """
+        Validates that the index_column_name is consistent between regression config and probe options.
+        """
+        regression_index = self.regression.index_column_name
+        probe_index = self.probe.regression_eval_opts.index_column_name
+
+        if regression_index != probe_index:
+            raise ValueError(
+                f"Inconsistent index_column_name: "
+                f"regression config uses '{regression_index}' but "
+                f"probe regression_eval_opts uses '{probe_index}'"
+            )
+        return self

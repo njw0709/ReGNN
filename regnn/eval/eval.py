@@ -14,7 +14,7 @@ def OLS_stata(
     df: pd.DataFrame,
     regress_cmd: str,
     data_source: str = "test",
-    quietly: bool = True,
+    quietly: bool = False,
     df_already_moved: bool = False,
 ) -> OLSModeratedResultsProbe:
     """Original Stata-based significance evaluation"""
@@ -84,7 +84,7 @@ def OLS_statsmodel(
 def VIF_stata(
     df: pd.DataFrame,
     data_source: str = "test",
-    quietly: bool = True,
+    quietly: bool = False,
     df_already_moved: bool = False,
 ) -> VarianceInflationFactorProbe:
     stata = init_stata()

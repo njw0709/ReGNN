@@ -225,7 +225,7 @@ def generate_stata_command(
         cmd_parts.append(f"c.{focal}")
 
     # Add summary index and focal predictor interactions
-    cmd_parts.append(f"c.{focal}#c.{regression_config.index_col_name}")
+    cmd_parts.append(f"c.{focal}#c.{regression_config.index_column_name}")
 
     # Add controlled variables
     for col in regression_config.controlled_cols + regression_config.moderators:
