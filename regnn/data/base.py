@@ -16,6 +16,7 @@ from .preprocess_fns import (
     standardize_cols,
     map_to_zero_one,
 )
+from collections import defaultdict
 
 numeric = Union[int, float, complex, np.number]
 
@@ -131,11 +132,16 @@ class DataFrameReadInConfig(BaseModel):
     @property
     def df_dtypes(self) -> Dict[str, List[str]]:
         """Get the dtypes dictionary for the dataframe."""
-        df_dtype_list = [("category", c) for c in self.categorical_cols]
-        df_dtype_list += [("ordinals", c) for c in self.ordinal_cols]
-        df_dtype_list += [("binary", c) for c in self.binary_cols]
-        df_dtype_list += [("continuous", c) for c in self.continuous_cols]
-        return dict(df_dtype_list)
+        dtypes = defaultdict(list)
+        for col in self.categorical_cols:
+            dtypes["category"].append(col)
+        for col in self.ordinal_cols:
+            dtypes["ordinals"].append(col)
+        for col in self.binary_cols:
+            dtypes["binary"].append(col)
+        for col in self.continuous_cols:
+            dtypes["continuous"].append(col)
+        return dict(dtypes)
 
     @computed_field
     @property

@@ -1,7 +1,11 @@
 import pandas as pd
 import numpy as np  # Added for dummy data generation
 import os  # Added to handle paths
-from regnn.macroutils import MacroConfig, train, ModeratedRegressionConfig
+from regnn.macroutils import (
+    MacroConfig,
+    ModeratedRegressionConfig,
+    generate_stata_command,
+)
 from regnn.data import DataFrameReadInConfig
 from regnn.model import ReGNNConfig, SVDConfig
 from regnn.train import (
@@ -49,7 +53,6 @@ def main():
         controlled_cols=[],  # controlled variables that are not moderators.
         moderators=moderator_cols,
         index_col_name="vul_index",
-        data_readin_config=read_config,
     )
 
     # 3. ReGNNConfig
@@ -96,7 +99,7 @@ def main():
             evaluation_function="stata",
             evaluate=True,
             eval_epochs=5,
-            regress_cmd=regression_config.generate_stata_command(),
+            regress_cmd=generate_stata_command(read_config, regression_config),
         ),
         return_trajectory=True,
         get_testset_results=True,
@@ -112,8 +115,8 @@ def main():
         probe=probe_opts,
     )
 
-    print(macro_config)
-    print(macro_config.model_dump_json())
+    with open("/home/namj/projects/ReGNN/scripts/configs.json", "w") as f:
+        f.write(macro_config.model_dump_json(indent=4))
 
     # # Run training
     # training_output = train(macro_config)

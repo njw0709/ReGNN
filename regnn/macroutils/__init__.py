@@ -8,6 +8,7 @@ from .utils import (
     compute_index_prediction,
     compute_svd,
     setup_loss_and_optimizer,
+    generate_stata_command,
 )
 
 __all__ = [
@@ -21,4 +22,5 @@ __all__ = [
     "compute_index_prediction",
     "compute_svd",
     "setup_loss_and_optimizer",
+    "generate_stata_command",
 ]
