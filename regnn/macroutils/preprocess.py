@@ -17,7 +17,7 @@ def preprocess(
         ReGNNDataset: Preprocessed dataset ready for ReGNN
     """
     # Get dataframe and preprocessing steps from config
-    df = read_config.df
+    df = read_config.read_df()
     df_dtypes = read_config.df_dtypes
     preprocess_steps = read_config.preprocess_steps
 

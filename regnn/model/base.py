@@ -73,7 +73,7 @@ class ReGNNConfig(BaseModel):
 
     # Core components
     nn_config: IndexPredictionConfig
-    num_controlled: int = Field(..., gt=0, description="Number of controlled variables")
+    num_controlled: int = Field(..., ge=0, description="Number of controlled variables")
 
     # Additional settings
     include_bias_focal_predictor: bool = Field(

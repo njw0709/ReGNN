@@ -1,15 +1,31 @@
 from typing import Sequence, Callable, Union, Tuple, List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
-from pydantic import BaseModel, field_validator, ConfigDict, computed_field
+from pydantic import (
+    BaseModel,
+    field_validator,
+    ConfigDict,
+    computed_field,
+    model_serializer,
+    model_validator,
+)
 from .preprocess_fns import (
     binary_to_one_hot,
     multi_cat_to_one_hot,
     convert_categorical_to_ordinal,
     standardize_cols,
+    map_to_zero_one,
 )
 
 numeric = Union[int, float, complex, np.number]
+
+function_registry = {
+    "binary_to_one_hot": binary_to_one_hot,
+    "multi_cat_to_one_hot": multi_cat_to_one_hot,
+    "standardize_cols": standardize_cols,
+    "convert_categorical_to_ordinal": convert_categorical_to_ordinal,
+    "map_to_zero_one": map_to_zero_one,
+}
 
 
 class PreprocessStep(BaseModel):
@@ -30,11 +46,44 @@ class PreprocessStep(BaseModel):
         ):
             self.reverse_function = self.function._reverse_transform
 
+    @model_serializer
+    def serialize(self) -> dict:
+        return {
+            "columns": self.columns,
+            "function": self.function.__name__,
+            "reverse_transform_info": self.reverse_transform_info,
+        }
+
+    @model_validator(mode="before")
+    @classmethod
+    def deserialize(cls, data: dict):
+        if not isinstance(data, dict):
+            raise ValueError("Invalid data format for PreprocessStep")
+
+        # If already a function, skip registry lookup
+        fn = data.get("function")
+        if callable(fn):
+            return data
+
+        # Else resolve from string
+        function_name = data.get("function")
+        if not function_name:
+            raise ValueError("Missing 'function' name in PreprocessStep")
+
+        if function_name not in function_registry:
+            raise ValueError(f"Unknown function '{function_name}'")
+
+        data = data.copy()
+        data["function"] = function_registry[function_name]
+        return data
+
 
 class DataFrameReadInConfig(BaseModel):
     """Configurations / variables needed to read in the dataframe."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+    )
 
     data_path: str
     read_cols: Sequence[str]
@@ -57,9 +106,13 @@ class DataFrameReadInConfig(BaseModel):
         cls, v: Union[List[str], str], info
     ) -> Union[List[str], str]:
         """Validate that all specified columns are present in read_cols."""
-        read_cols = info.data.get("read_cols", [])
+        if not v:  # Handle None or empty list/string
+            return v
+        read_cols = info.data.get("read_cols")
+        if not read_cols:  # Handle case where read_cols is None
+            raise ValueError("read_cols must be provided")
         if isinstance(v, str):  # For survey_weight_col
-            if v and v not in read_cols:
+            if v not in read_cols:
                 raise ValueError(f"Column '{v}' must be present in read_cols")
         else:  # For list columns
             missing_cols = [col for col in v if col not in read_cols]
@@ -67,9 +120,7 @@ class DataFrameReadInConfig(BaseModel):
                 raise ValueError(f"Columns {missing_cols} must be present in read_cols")
         return v
 
-    @computed_field
-    @property
-    def df(self) -> pd.DataFrame:
+    def read_df(self) -> pd.DataFrame:
         """Read and return the dataframe."""
         df = pd.read_stata(self.data_path, columns=self.read_cols)
         if self.rename_dict:

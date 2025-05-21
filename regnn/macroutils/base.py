@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, Union
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from regnn.model import ReGNNConfig
 from regnn.train import TrainingHyperParams, ProbeOptions, KLDLossConfig
@@ -12,6 +12,80 @@ class ModeratedRegressionConfig(BaseModel):
     outcome_col: str
     controlled_cols: List[str]
     moderators: List[str]
+    index_col_name: Union[str, List[str]]
+    data_readin_config: DataFrameReadInConfig
+
+    def generate_stata_command(self) -> str:
+        """
+        Generate a Stata regression command based on the configuration.
+        Uses the rename_dict from data_readin_config to map internal column names to Stata variable names.
+
+        Returns:
+            str: The complete Stata regression command
+        """
+
+        # Helper function to get the correct variable name
+        def get_var_name(col: str) -> str:
+            # If col is a value in rename_dict, return its key
+            # If col is a key in rename_dict, return the original name
+            # Otherwise return the original name
+            rename_dict = self.data_readin_config.rename_dict
+            if col in rename_dict.values():
+                # Find the key for this value
+                for key, value in rename_dict.items():
+                    if value == col:
+                        return key
+            return col
+
+        # Start with basic regression command
+        cmd_parts = ["regress"]
+
+        # Add outcome and focal predictor with interaction
+        outcome = get_var_name(self.outcome_col)
+        focal = get_var_name(self.focal_predictor)
+
+        # Add outcome and focal predictor with interaction
+        cmd_parts.append(outcome)
+
+        # Add appropriate prefix to focal predictor based on its type
+        if (
+            self.data_readin_config.binary_cols
+            and self.focal_predictor in self.data_readin_config.binary_cols
+        ) or (
+            self.data_readin_config.categorical_cols
+            and self.focal_predictor in self.data_readin_config.categorical_cols
+        ):
+            cmd_parts.append(f"i.{focal}")
+        else:
+            cmd_parts.append(f"c.{focal}")
+
+        # Add summary index and focal predictor interactions
+        cmd_parts.append(f"c.{focal}#c.{self.index_col_name}")
+
+        # Add controlled variables
+        for col in self.controlled_cols + self.moderators:
+            col_name = get_var_name(col)
+            # Check if the column is binary or categorical in the data config
+            if (
+                self.data_readin_config.binary_cols
+                and col in self.data_readin_config.binary_cols
+            ):
+                cmd_parts.append(f"i.{col_name}")
+            elif (
+                self.data_readin_config.categorical_cols
+                and col in self.data_readin_config.categorical_cols
+            ):
+                cmd_parts.append(f"i.{col_name}")
+            else:
+                assert col in self.data_readin_config.continuous_cols
+                cmd_parts.append(f"c.{col_name}")
+
+        # Add survey weights if specified
+        if self.data_readin_config.survey_weight_col is not None:
+            weight_col = get_var_name(self.data_readin_config.survey_weight_col)
+            cmd_parts.append(f"[pweight={weight_col}]")
+
+        return " ".join(cmd_parts)
 
 
 class MacroConfig(BaseModel):

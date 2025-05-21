@@ -26,6 +26,7 @@ def _reverse_binary_to_one_hot(
 
 
 binary_to_one_hot._reverse_transform = _reverse_binary_to_one_hot
+binary_to_one_hot.__name__ = "binary_to_one_hot"
 
 
 def multi_cat_to_one_hot(
@@ -88,6 +89,7 @@ def _reverse_multi_cat_to_one_hot(
 
 
 multi_cat_to_one_hot._reverse_transform = _reverse_multi_cat_to_one_hot
+multi_cat_to_one_hot.__name__ = "multi_cat_to_one_hot"
 
 
 def standardize_cols(
@@ -127,6 +129,7 @@ def _reverse_standardize_cols(
 
 
 standardize_cols._reverse_transform = _reverse_standardize_cols
+standardize_cols.__name__ = "standardize_cols"
 
 
 def convert_categorical_to_ordinal(
@@ -154,6 +157,7 @@ def _reverse_convert_categorical_to_ordinal(
 convert_categorical_to_ordinal._reverse_transform = (
     _reverse_convert_categorical_to_ordinal
 )
+convert_categorical_to_ordinal.__name__ = "convert_categorical_to_ordinal"
 
 
 def map_to_zero_one(
@@ -188,3 +192,4 @@ def _reverse_map_to_zero_one(
 
 
 map_to_zero_one._reverse_transform = _reverse_map_to_zero_one
+map_to_zero_one.__name__ = "map_to_zero_one"
