@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Literal
 from pydantic import BaseModel, Field, ConfigDict
 import torch
 
@@ -15,20 +15,63 @@ class EarlyStoppingConfig(BaseModel):
     )
 
 
-class LossOptions(BaseModel):
-    """Configuration for loss function and regularization"""
+class RegularizationConfig(BaseModel):
+    """Configuration for regularization"""
 
     model_config = ConfigDict(arbitrary_types_allowed=False)
+    name: str = Field(..., description="name of the regularization function used")
+    regularization_alpha: float = Field(
+        0.1, description="alpha weight for regularization term"
+    )
 
-    weight_decay_regression: float = Field(
+
+class ElasticNetRegConfig(RegularizationConfig):
+    name: str = "elasticnet"
+    elastic_net_alpha: float = Field(
+        0.1,
+        description="alpha balancing l2 and l1 regularization. (1-alpha)*l2 + alpha*l1",
+    )
+
+
+class LossConfigs(BaseModel):
+    """Configuration for loss function"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+    name: str = Field("MSE", description="name of the loss function used")
+    reduction: Literal["mean", "sum", "none"] = Field(
+        "mean", description="how loss is reduced per batch"
+    )
+    regularization: Optional[RegularizationConfig] = Field(
+        None, description="regularization configuration"
+    )
+
+
+class WeightDecayConfig(BaseModel):
+    """Weight decay specific hyperparameters"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    # weight decay option
+    weight_decay_regression: Optional[float] = Field(
         0.0, ge=0.0, description="L2 regularization weight for regression"
     )
-    weight_decay_nn: float = Field(
+    weight_decay_nn: Optional[float] = Field(
         0.0, ge=0.0, description="L2 regularization weight for neural network"
     )
-    use_survey_weights: bool = Field(
-        False,
-        description="Whether to use survey weights. If true, weighted MSE is used as objective.",
+
+
+class MSELossConfig(LossConfigs):
+    name: str = "MSE"
+    weight_decay: WeightDecayConfig = Field(
+        default_factory=WeightDecayConfig, description="weight decay configurations"
+    )
+
+
+class KLDLossConfig(LossConfigs):
+    name: str = "KLDLoss"
+    lamba_reg: float = Field(0.01, ge=0, description="kld lambda (mse + lambda*kld)")
+    weight_decay: WeightDecayConfig = Field(
+        default_factory=WeightDecayConfig, description="weight decay configurations"
     )
 
 
@@ -51,8 +94,8 @@ class TrainingHyperParams(BaseModel):
         description="Optional early stopping configuration. If None, early stopping will be disabled.",
     )
 
-    loss_options: LossOptions = Field(
-        default_factory=LossOptions,
+    loss_options: LossConfigs = Field(
+        default_factory=LossConfigs,
         description="Configuration for loss function and regularization",
     )
 

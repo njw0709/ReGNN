@@ -1,11 +1,4 @@
 import stata_setup
-import torch
-from regnn.model.regnn import ReGNN
-import numpy as np
-import pandas as pd
-from regnn.constants import TEMP_DIR
-import os
-from typing import Union
 
 # Track Stata initialization status
 _stata_initialized = False

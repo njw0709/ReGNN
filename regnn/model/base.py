@@ -37,9 +37,6 @@ class SVDConfig(BaseModel):
 
     enabled: bool = Field(False, description="Whether to use SVD")
     k_dim: Optional[Union[int, List[int]]] = Field(10, description="SVD dimension")
-    svd_matrix: Optional[
-        Union[torch.Tensor, List[torch.Tensor], np.ndarray, List[np.ndarray]]
-    ] = None
 
     @field_validator("k_dim")
     def validate_k_dim(cls, v, values):

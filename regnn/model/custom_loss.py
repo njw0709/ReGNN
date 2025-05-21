@@ -18,8 +18,12 @@ def vae_kld_regularized_loss(lambda_reg=0.01, reduction: str = "mean"):
 
         if reduction == "mean":
             total_loss = torch.mean(mse_loss) + lambda_reg * torch.mean(kld_loss)
-        else:
+        elif reduction == "sum":
+            total_loss = torch.sum(mse_loss) + lambda_reg * torch.sum(kld_loss)
+        elif reduction == "none":
             total_loss = mse_loss + lambda_reg * kld_loss
+        else:
+            raise NameError("reduction must be one of: sum, mean, none!")
         return total_loss
 
     return partial(loss, lambda_reg=lambda_reg)
@@ -52,6 +56,20 @@ def elasticnet_loss(alpha=0.1, reduction: str = "mean"):
         elif reduction == "none":
             return (1.0 - alpha) * torch.square(var) + alpha * torch.abs(var)
         else:
-            raise NameError()
+            raise NameError("reduction must be one of: sum, mean, none!")
+
+    return loss
+
+
+def ridge_loss(reduction: str = "sum"):
+    def loss(var):
+        if reduction == "sum":
+            return torch.sum(torch.square(var))
+        elif reduction == "mean":
+            return torch.mean(torch.square(var))
+        elif reduction == "none":
+            return torch.square(var)
+        else:
+            raise NameError("reduction must be one of: sum, mean, none!")
 
     return loss
