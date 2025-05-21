@@ -9,8 +9,6 @@ from regnn.model import ReGNN
 from regnn.train import KLDLossConfig, process_epoch
 from regnn.probe import (
     L2NormProbe,
-    OLSModeratedResultsProbe,
-    VarianceInflationFactorProbe,
     ObjectiveProbe,
     Trajectory,
     Snapshot,
@@ -40,9 +38,6 @@ def train(
     Returns:
         Trained model and optionally trajectory data.
     """
-    read_cfg = macro_config.read_config
-    regression_cfg = macro_config.regression
-
     regnn_cfg = macro_config.model
     training_hp = macro_config.training
     probe_opts = macro_config.probe

@@ -416,7 +416,12 @@ class ReGNN(nn.Module):
 
         self.device = device
         self.batch_norm = batch_norm
-        self.controlled_var_weights = nn.Linear(num_controlled, 1)
+
+        # Only create controlled_var_weights if we have controlled variables
+        self.has_controlled_vars = num_controlled > 0
+        if self.has_controlled_vars:
+            self.controlled_var_weights = nn.Linear(num_controlled, 1)
+
         self.focal_predictor_main_weight = nn.Parameter(torch.randn(1, 1))
         self.predicted_index_weight = nn.Parameter(torch.randn(1, self.num_models))
 
@@ -425,9 +430,10 @@ class ReGNN(nn.Module):
             self.focal_predictor_main_weight,
             self.predicted_index_weight,
         ]
-        self.mmr_parameters.extend(
-            [param for param in self.controlled_var_weights.parameters()]
-        )
+        if self.has_controlled_vars:
+            self.mmr_parameters.extend(
+                [param for param in self.controlled_var_weights.parameters()]
+            )
         if include_bias_focal_predictor:
             self.interactor_bias = nn.Parameter(torch.randn(1, 1))
             self.mmr_parameters.append(self.interactor_bias)
@@ -447,7 +453,13 @@ class ReGNN(nn.Module):
                 all_linear_vars = torch.cat((controlled_vars, moderators), 1)
             else:
                 all_linear_vars = torch.cat((controlled_vars, *moderators), 1)
-        controlled_term = self.controlled_var_weights(all_linear_vars)
+
+        # Only compute controlled term if we have controlled variables
+        controlled_term = (
+            self.controlled_var_weights(all_linear_vars)
+            if self.has_controlled_vars
+            else 0.0
+        )
 
         if self.vae:
             if not self.training:

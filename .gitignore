@@ -6,6 +6,7 @@
 *.jpg
 *.pt
 *.pkl
+*.json
 /*.egg-info
 /figures
 /checkpoints

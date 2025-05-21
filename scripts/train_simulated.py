@@ -86,7 +86,7 @@ def main():
     # 4. TrainingHyperParams
     training_hp = TrainingHyperParams(
         epochs=50,
-        batch_size=256,
+        batch_size=5000,
         lr=0.001,
         train_test_split_ratio=0.8,
         loss_options=MSELossConfig(
@@ -114,7 +114,7 @@ def main():
         ),
         return_trajectory=True,
         get_testset_results=True,
-        get_l2_lengths=True,
+        get_l2_lengths=False,
     )
 
     # Create MacroConfig

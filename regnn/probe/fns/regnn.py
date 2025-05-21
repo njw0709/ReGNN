@@ -20,7 +20,8 @@ def get_l2_length(model: ReGNN) -> Dict[str, float]:
     """Calculate L2 norms for model parameters"""
     l2_lengths = {}
     main_parameters = [model.focal_predictor_main_weight, model.predicted_index_weight]
-    main_parameters += [p for p in model.controlled_var_weights.parameters()][:-1]
+    if model.has_controlled_vars:
+        main_parameters += [p for p in model.controlled_var_weights.parameters()][:-1]
     main_parameters = torch.cat(main_parameters, dim=1)
     main_param_l2 = main_parameters.norm(2).item()
 
