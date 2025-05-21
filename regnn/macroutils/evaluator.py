@@ -4,7 +4,7 @@ import pandas as pd
 from regnn.model.regnn import ReGNN
 from regnn.data.dataset import ReGNNDataset
 from typing import Dict, Optional, Tuple, Callable, Any
-from regnn.eval.base import EvaluationOptions
+from regnn.eval.base import RegressionEvalOptions
 from regnn.model.base import ReGNNConfig
 from regnn.train.base import TrainingHyperParams
 from .utils import compute_index_prediction
@@ -22,7 +22,7 @@ from regnn.eval.eval import (
 def eval_regnn(
     model: ReGNN,
     eval_regnn_dataset: ReGNNDataset,
-    eval_options: EvaluationOptions,
+    eval_options: RegressionEvalOptions,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
     data_source: str = "test",
 ) -> Tuple[OLSModeratedResultsProbe, VarianceInflationFactorProbe]:
@@ -134,7 +134,7 @@ def get_regression_summary(
     df_orig_with_predictions: pd.DataFrame,
     training_config: TrainingHyperParams,
     regnn_model_config: ReGNNConfig,
-    eval_options: EvaluationOptions,
+    eval_options: RegressionEvalOptions,
     thresholded_value: float = 0.0,
     quietly: bool = False,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",

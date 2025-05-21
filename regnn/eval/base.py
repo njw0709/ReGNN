@@ -60,7 +60,7 @@ class FocalPredictorPreProcessOptions(BaseModel):
         return process
 
 
-class EvaluationOptions(BaseModel):
+class RegressionEvalOptions(BaseModel):
     """Input configuration for evaluation functions"""
 
     model_config = ConfigDict(arbitrary_types_allowed=False)

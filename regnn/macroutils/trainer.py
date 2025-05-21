@@ -7,10 +7,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from regnn.data.dataset import ReGNNDataset
 from regnn.data.datautils import train_test_split  # For splitting dataset
 from regnn.model.regnn import ReGNN
-from regnn.model.base import ReGNNConfig  # Used directly from MacroConfig
 from regnn.model.custom_loss import (
     vae_kld_regularized_loss,
     elasticnet_loss,
@@ -18,13 +16,12 @@ from regnn.model.custom_loss import (
 )
 from regnn.eval.eval import compute_index_prediction  # For intermediate index
 from regnn.train.base import (
-    TrajectoryData,
     TrainingHyperParams,  # Explicitly import for type hint
-    LossConfigs,  # Base for loss options
     MSELossConfig,  # Specific MSE config
     KLDLossConfig,  # Specific KLD config
     ElasticNetRegConfig,  # Specific Regularization Config
 )
+from regnn.probe import Trajectory
 from regnn.train.loop import process_epoch  # Use process_epoch
 
 from .base import MacroConfig  # The main configuration object
@@ -34,64 +31,12 @@ from .evaluator import (
     get_thresholded_value,
 )
 from .utils import save_regnn  # For saving model
-
-# create_model and setup_loss_and_optimizer will remain here for now
-# They are specific to how ReGNN is set up within this macro flow.
-
-
-def create_model(
-    train_dataset_config: Any,  # ReGNNDatasetConfig from all_dataset.config
-    training_hyperparams: Any,  # training_hyperparams from macro_config.training
-    regnn_model_config: ReGNNConfig,  # regnn_model_config from macro_config.model
-) -> ReGNN:
-    """Create and initialize the ReGNN model using sub-configs from MacroConfig."""
-    # train_dataset_config is an instance of ReGNNDatasetConfig
-    moderator_size = len(train_dataset_config.moderators)
-    controlled_var_size = len(train_dataset_config.controlled_predictors)
-
-    svd_matrix = None
-    if regnn_model_config.nn_config.svd.enabled:
-        # SVD is usually performed on the actual data, not just from config.
-        # This part might need adjustment if SVD matrix isn't pre-computed and passed in ReGNNConfig
-        # Assuming svd_matrix might be passed via ReGNNConfig.nn_config.svd.svd_matrix if precomputed
-        # If it needs to be computed here, we need the actual moderator data.
-        # For now, let's assume if enabled, svd_matrix is provided in regnn_model_config or needs data.
-        # The original trainer did PCA on train_dataset.df. This implies create_model needs data access.
-        # This is a slight departure, let's assume svd_matrix is part of regnn_model_config.nn_config.svd.svd_matrix if used
-        svd_matrix = regnn_model_config.nn_config.svd.svd_matrix
-        # Or, if it MUST be computed here, we'd need train_dataset.df which create_model doesn't have.
-        # This indicates a potential need to pass train_dataset to create_model, or precompute SVD matrix
-        # and set it in MacroConfig -> ReGNNConfig before calling train.
-        # For now, proceeding with assumption it's in regnn_model_config if used.
-        pass  # Placeholder for SVD matrix logic if it needs to be computed from data here
-
-    model = ReGNN(
-        num_moderators=moderator_size,
-        num_controlled=controlled_var_size,
-        hidden_layer_sizes=training_hyperparams.hidden_layer_sizes,
-        svd=regnn_model_config.nn_config.svd.enabled,
-        svd_matrix=svd_matrix,
-        k_dim=regnn_model_config.nn_config.svd.k_dim,
-        include_bias_focal_predictor=regnn_model_config.include_bias_focal_predictor,
-        control_moderators=regnn_model_config.control_moderators,
-        batch_norm=regnn_model_config.nn_config.batch_norm,
-        vae=regnn_model_config.nn_config.vae,
-        output_mu_var=regnn_model_config.nn_config.output_mu_var,
-        dropout=regnn_model_config.nn_config.dropout,
-        device=training_hyperparams.device,
-        n_ensemble=regnn_model_config.nn_config.n_ensemble,
-        interaction_direction=regnn_model_config.interaction_direction,
-    )
-
-    if training_hyperparams.device == "cuda":
-        model.cuda()
-    return model
+from .utils import compute_svd  # Added import for compute_svd function
 
 
 def setup_loss_and_optimizer(
     model: ReGNN,
     training_hyperparams: TrainingHyperParams,  # Use the specific type
-    regnn_model_config: ReGNNConfig,
 ) -> Tuple[nn.Module, Optional[nn.Module], optim.Optimizer]:
     """Setup loss function, regularization, and optimizer based on TrainingHyperParams and ReGNNConfig."""
 
@@ -123,15 +68,12 @@ def setup_loss_and_optimizer(
         reg_config = loss_opts.regularization
         if isinstance(reg_config, ElasticNetRegConfig):
             regularization = elasticnet_loss(
-                reduction="mean", alpha=reg_config.elastic_net_alpha
+                reduction=loss_opts.reduction, alpha=reg_config.elastic_net_alpha
             )
         elif reg_config.name == "lasso":
             # Assuming a LassoRegConfig would be similar if it existed formally
             # For now, relies on name and expects regularization_alpha from base RegularizationConfig
-            regularization = lasso_loss(reduction="mean")
-        # Add other specific regularization types here if needed, e.g.:
-        # elif isinstance(reg_config, RidgeRegConfig):
-        #     regularization = ridge_loss(reduction="mean")
+            regularization = lasso_loss(reduction=loss_opts.reduction)
         else:
             print(
                 f"Warning: Unknown or non-specific regularization type specified: {reg_config.name}. No additive penalty will be applied beyond optimizer weight decay."
@@ -173,7 +115,7 @@ def setup_loss_and_optimizer(
 
 def train(
     macro_config: MacroConfig,
-) -> Union[Tuple[ReGNN, List[TrajectoryData]], ReGNN]:
+) -> Union[Tuple[ReGNN, List[Trajectory]], ReGNN]:
     """
     Train a ReGNN model using the comprehensive MacroConfig.
 
@@ -183,65 +125,48 @@ def train(
     Returns:
         Trained model and optionally trajectory data.
     """
-    training_hp = macro_config.training
+    read_cfg = macro_config.read_config
+    regression_cfg = macro_config.regression
+
     regnn_cfg = macro_config.model
+    training_hp = macro_config.training
     eval_opts = macro_config.evaluation
-    probe_opts = macro_config.probe  # Added for clarity
-    read_cfg = macro_config.read_config  # Added for clarity
-    regression_cfg = macro_config.regression  # Added for clarity
+    probe_opts = macro_config.probe
 
     # 1. Preprocessing
     # The preprocess function now takes DataFrameReadInConfig and ModeratedRegressionConfig directly.
     all_dataset = preprocess(read_config=read_cfg, regression_config=regression_cfg)
 
     # 2. Data Splitting
-    # Assuming train_ratio is in training_hp or a dedicated split_config like training_hp.data_split_options.train_ratio
-    # For now, using a direct attribute if it exists, else default.
-    train_split_ratio = getattr(training_hp, "train_test_split_ratio", 0.8)
-    if not (0 < train_split_ratio < 1):
-        raise ValueError(
-            f"train_test_split_ratio must be between 0 and 1, got {train_split_ratio}"
-        )
-
     train_indices, test_indices = train_test_split(
-        num_elems=len(all_dataset.df), train_ratio=train_split_ratio
+        num_elems=len(all_dataset),
+        train_ratio=training_hp.train_test_split_ratio,
+        seed=training_hp.train_test_split_seed,
     )
 
     train_dataset = all_dataset.get_subset(train_indices)
     test_dataset = all_dataset.get_subset(test_indices)
 
     # SVD matrix computation remains the same, using train_dataset.config and regnn_cfg
-    svd_matrix_for_model = None
     if regnn_cfg.nn_config.svd.enabled:
-        if regnn_cfg.nn_config.svd.svd_matrix is not None:
-            svd_matrix_for_model = regnn_cfg.nn_config.svd.svd_matrix
-        else:  # Compute SVD from train_dataset
-            # Ensure moderators in train_dataset.config are correctly resolved if they are lists of lists for ensemble models
-            moderator_columns = train_dataset.config.moderators
-            if isinstance(
-                moderator_columns[0], list
-            ):  # Ensemble case, flatten for SVD on combined moderators or handle per model
-                # This SVD computation assumes a single SVD matrix. For ensemble models with separate SVDs,
-                # this logic would need to be part of the model or a more complex setup.
-                # For now, assuming moderators is List[str] for this PCA step.
-                # If it's List[List[str]], this will fail. Revisit if ensemble SVD is separate.
-                raise NotImplementedError(
-                    "SVD computation for ensemble models with separate moderator lists not directly supported here. Pre-compute SVD matrix or ensure moderators is List[str]."
+        # Compute SVD from train_dataset
+        moderator_columns = train_dataset.config.moderators
+        if isinstance(moderator_columns[0], list):  # Ensemble case
+            # Compute SVD for each list of moderators separately
+            svd_matrices = []
+            for mod_list in moderator_columns:
+                moderators_np = train_dataset.df[mod_list].to_numpy()
+                svd_matrix = compute_svd(
+                    moderators_np, k_dim=regnn_cfg.nn_config.svd.k_dim
                 )
-
+                svd_matrices.append(svd_matrix)
+        else:  # Single list case
             moderators_np = train_dataset.df[moderator_columns].to_numpy()
-            _U, _S, V_computed = torch.pca_lowrank(
-                torch.from_numpy(moderators_np).to(torch.float32),
-                q=regnn_cfg.nn_config.svd.k_dim,
-                center=False,  # As per original logic
-                niter=10,  # As per original logic
+            svd_matrices = compute_svd(
+                moderators_np, k_dim=regnn_cfg.nn_config.svd.k_dim
             )
-            V_computed = V_computed.to(torch.float32)
-            V_computed.requires_grad = False
-            svd_matrix_for_model = V_computed
-            regnn_cfg.nn_config.svd.svd_matrix = (
-                svd_matrix_for_model  # Save computed SVD matrix back to config
-            )
+
+        regnn_cfg.nn_config.svd.svd_matrix = svd_matrices
 
     # 3. Model Initialization using from_config
     # ReGNNConfig (regnn_cfg.nn_config.num_moderators) is assumed to be the source of truth for num_moderators,
@@ -257,60 +182,21 @@ def train(
     )
 
     # 4. DataLoader
-    train_torch_dataset = train_dataset.to_torch_dataset(device=training_hp.device)
     dataloader = DataLoader(
-        train_torch_dataset,
+        train_dataset,
         batch_size=training_hp.batch_size,
         shuffle=training_hp.shuffle,
     )
 
-    test_dataset_torch: Optional[Dict[str, torch.Tensor]] = None
-    test_dataloader: Optional[DataLoader] = None
-    if training_hp.get_testset_results and test_dataset:
-        test_dataset_torch = test_dataset.to_torch_dataset(device=training_hp.device)
-        test_dataloader = DataLoader(
-            test_dataset_torch,
-            batch_size=training_hp.batch_size,
-            shuffle=False,
-        )
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=training_hp.batch_size,
+        shuffle=False,
+    )
 
     # 5. Training Loop
-    trajectory_data: List[TrajectoryData] = []
+    trajectory_data: List[Trajectory] = []
     intermediate_indices: List[np.ndarray] = []
-
-    if eval_opts.evaluate_initial and training_hp.return_trajectory:
-        initial_train_moderators = train_dataset.to_tensor(device=training_hp.device)[
-            "moderators"
-        ]
-        initial_train_idx_preds = (
-            compute_index_prediction(model, initial_train_moderators).cpu().numpy()
-        )
-        df_train_with_preds = train_dataset.df_orig.copy()
-        df_train_with_preds[eval_opts.index_column_name] = initial_train_idx_preds
-
-        traj_epoch = TrajectoryData(epoch_num_if_applicable=0)
-        traj_epoch.regression_summary = get_regression_summary(
-            model, train_dataset, df_train_with_preds, training_hp, regnn_cfg, eval_opts
-        )
-
-        if training_hp.get_testset_results and test_dataset:
-            initial_test_moderators = test_dataset.to_tensor(device=training_hp.device)[
-                "moderators"
-            ]
-            initial_test_idx_preds = (
-                compute_index_prediction(model, initial_test_moderators).cpu().numpy()
-            )
-            df_test_with_preds = test_dataset.df_orig.copy()
-            df_test_with_preds[eval_opts.index_column_name] = initial_test_idx_preds
-            traj_epoch.regression_summary_test = get_regression_summary(
-                model,
-                test_dataset,
-                df_test_with_preds,
-                training_hp,
-                regnn_cfg,
-                eval_opts,
-            )
-        trajectory_data.append(traj_epoch)
 
     for epoch in range(training_hp.epochs):
         current_lambda_reg = 0.0
@@ -385,7 +271,7 @@ def train(
             )
             save_regnn(model, data_id=f"{model_file_prefix}_{epoch}")
 
-        traj_epoch_data = TrajectoryData(
+        traj_epoch_data = Trajectory(
             train_loss=epoch_loss,
             test_loss=current_test_loss if current_test_loss is not None else -1.0,
             l2=l2_lengths,

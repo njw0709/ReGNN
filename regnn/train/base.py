@@ -88,6 +88,13 @@ class TrainingHyperParams(BaseModel):
         description="Device to run model on",
     )
     shuffle: bool = Field(True, description="Whether to shuffle training data")
+    train_test_split_ratio: float = Field(
+        0.8, description="ratio of samples to use for training set"
+    )
+    train_test_split_seed: int = Field(
+        42,
+        description="seed to use for shuffling indices to use for splitting train and test set",
+    )
 
     stopping_options: Optional[EarlyStoppingConfig] = Field(
         default=None,

@@ -1,6 +1,6 @@
 import torch
 from regnn.model.regnn import ReGNN
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 import os
 from regnn.constants import TEMP_DIR
 import pandas as pd
@@ -97,3 +97,15 @@ def save_intermediate_df(
     df_orig[output_index_name] = index_predictions
     df_orig.to_stata(save_path, write_index=False)
     return True
+
+
+def compute_svd(moderators_np: np.ndarray, k_dim=int) -> torch.Tensor:
+    _U, _S, V_computed = torch.pca_lowrank(
+        torch.from_numpy(moderators_np).to(torch.float32),
+        q=k_dim,
+        center=False,  # As per original logic
+        niter=10,  # As per original logic
+    )
+    V_computed = V_computed.to(torch.float32)
+    V_computed.requires_grad = False
+    return V_computed

@@ -1,5 +1,6 @@
 from pydantic import Field, ConfigDict, field_validator
 from .base import ProbeData
+from typing import Dict
 
 
 class OLSResultsProbe(ProbeData):
@@ -46,3 +47,23 @@ class VarianceInflationFactorProbe(ProbeData):
     vif_interaction: float = Field(
         ..., description="Variance inflation factor for interaction term"
     )
+
+
+class L2NormProbe(ProbeData):
+    """Probe for tracking L2 norms of model parameters"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
+    main_norm: float = Field(-1, description="L2 norm of main parameters")
+    index_norm: float = Field(-1, description="L2 norm of index parameters")
+
+    @classmethod
+    def from_dict(
+        cls, data: Dict[str, float], data_source: str = "train"
+    ) -> "L2NormProbe":
+        """Create an L2NormProbe from dictionary returned by get_l2_length"""
+        return cls(
+            data_source=data_source,
+            main_norm=data.get("main", -1),
+            index_norm=data.get("index", -1),
+        )

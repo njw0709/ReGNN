@@ -1,12 +1,12 @@
 import numpy as np
 import torch
 
-np.random.seed(0)
 
-
-def train_test_split(num_elems, train_ratio=0.7):
+def train_test_split(num_elems, train_ratio=0.7, seed=42):
     # create and shuffle indices
     indices = np.arange(num_elems)
+    # Set the seed for reproducibility
+    np.random.seed(seed)
     np.random.shuffle(indices)
 
     # compute number of data for train and test
@@ -19,9 +19,13 @@ def train_test_split(num_elems, train_ratio=0.7):
     return train_indices, test_indices
 
 
-def train_test_val_split(num_elems, train_ratio=0.5, test_ratio=0.25, val_ratio=0.25):
+def train_test_val_split(
+    num_elems, train_ratio=0.5, test_ratio=0.25, val_ratio=0.25, seed=42
+):
     # create and shuffle indices
     indices = np.arange(num_elems)
+    # Set the seed for reproducibility
+    np.random.seed(seed)
     np.random.shuffle(indices)
 
     # compute number of data for train and test
