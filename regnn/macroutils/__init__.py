@@ -1,33 +1,24 @@
-from .base import MacroConfig
-from .evaluator import (
-    eval_regnn,
-    test_regnn,
-    get_regression_summary,
-    get_thresholded_value,
-)
+from .base import MacroConfig, ModeratedRegressionConfig
+from .evaluator import regression_eval_regnn
 from .preprocess import preprocess
 from .trainer import train
 from .utils import (
-    save_regnn,
     load_model,
     save_model,
-    load_regnn,
-    plot_training_trajectory,
-    compute_index_prediction,  # Assuming this is macroutils.utils.compute_index_prediction
+    compute_index_prediction,
+    compute_svd,
+    setup_loss_and_optimizer,
 )
 
 __all__ = [
     "MacroConfig",
-    "eval_regnn",  # The probe-returning one
-    "test_regnn",
-    "get_regression_summary",
-    "get_thresholded_value",
+    "ModeratedRegressionConfig",
+    "regression_eval_regnn",
     "preprocess",
     "train",
-    "save_regnn",
     "load_model",
     "save_model",
-    "load_regnn",
-    "plot_training_trajectory",
     "compute_index_prediction",
+    "compute_svd",
+    "setup_loss_and_optimizer",
 ]

@@ -2,22 +2,18 @@ from typing import List, Optional, Tuple, Union
 import os
 import numpy as np
 import pandas as pd
-
 from torch.utils.data import DataLoader
 
-from regnn.data.datautils import train_test_split
-from regnn.model.regnn import ReGNN
-
-from regnn.train.base import (
-    KLDLossConfig,  # Specific KLD config
-)
-from regnn.probe import Trajectory, Snapshot
-from regnn.train.loop import process_epoch  # Use process_epoch
-from regnn.probe.dataclass.nn import ObjectiveProbe
-from regnn.probe.dataclass.regression import (
+from regnn.data import train_test_split
+from regnn.model import ReGNN
+from regnn.train import KLDLossConfig, process_epoch
+from regnn.probe import (
     L2NormProbe,
     OLSModeratedResultsProbe,
     VarianceInflationFactorProbe,
+    ObjectiveProbe,
+    Trajectory,
+    Snapshot,
 )
 
 from .base import MacroConfig  # The main configuration object

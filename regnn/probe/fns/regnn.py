@@ -1,6 +1,6 @@
 from typing import Dict, List
 import torch
-from regnn.model.regnn import ReGNN
+from regnn.model import ReGNN
 
 
 def get_gradient_norms(model: ReGNN) -> Dict[str, List[float]]:

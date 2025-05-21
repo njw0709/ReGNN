@@ -1,9 +1,7 @@
 from .utils import init_stata
-import pandas as pd
 
 
 def draw_margins_plot_stata(
-    df: pd.DataFrame,
     margins_cmd: str,
     margins_plot_format_cmd: str,
     save_fig: bool = True,

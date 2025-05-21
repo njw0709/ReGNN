@@ -2,11 +2,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from regnn.model.regnn import ReGNN
 from typing import Dict, Optional, Tuple, Any, List, Callable, Union, Type
-from regnn.probe.dataclass.base import Snapshot, ProbeData, Trajectory
-from regnn.probe.dataclass.nn import ObjectiveProbe
-from regnn.probe.dataclass.regression import L2NormProbe
+
+from regnn.probe import Snapshot, ProbeData, Trajectory, ObjectiveProbe, L2NormProbe
+from regnn.model import ReGNN
 
 
 def _compute_loss(

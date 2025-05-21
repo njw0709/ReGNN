@@ -2,7 +2,6 @@ import torch
 from sklearn.base import BaseEstimator, RegressorMixin
 import inspect
 import pandas as pd
-import numpy as np
 
 
 class SklearnCompatibleModel(BaseEstimator, RegressorMixin):

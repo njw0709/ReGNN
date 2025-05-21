@@ -1,6 +1,5 @@
 import pandas as pd
-import numpy as np
-from typing import Sequence, Dict, List, Tuple, Any, Optional
+from typing import Sequence, Dict, Tuple, Optional
 
 
 # preprocess categorical col to one hot encoding

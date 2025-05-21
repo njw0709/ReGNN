@@ -1,8 +1,8 @@
-from typing import Optional, Any, List
+from typing import Any, List
 from pydantic import BaseModel, Field, ConfigDict, model_validator
-from regnn.model.base import ReGNNConfig
-from regnn.train.base import TrainingHyperParams, ProbeOptions, KLDLossConfig
-from regnn.data.base import ReGNNDatasetConfig, DataFrameReadInConfig
+from regnn.model import ReGNNConfig
+from regnn.train import TrainingHyperParams, ProbeOptions, KLDLossConfig
+from regnn.data import DataFrameReadInConfig
 
 
 class ModeratedRegressionConfig(BaseModel):

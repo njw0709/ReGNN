@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field, field_validator, ConfigDict
-from typing import List, Union, Optional, Sequence
+from typing import List, Union, Optional
 import torch
-import numpy as np
 
 
 class MLPConfig(BaseModel):

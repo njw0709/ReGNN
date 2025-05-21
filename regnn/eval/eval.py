@@ -3,7 +3,7 @@ import pandas as pd
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.regression.linear_model import OLS
 from statsmodels.tools.tools import add_constant
-from regnn.probe.dataclass.regression import (
+from regnn.probe import (
     OLSModeratedResultsProbe,
     VarianceInflationFactorProbe,
 )

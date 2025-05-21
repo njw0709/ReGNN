@@ -1,18 +1,28 @@
 from .base import (
-    TrainingConfig,
-    TrajectoryData,
     ProbeOptions,
     EarlyStoppingConfig,
     LossConfigs,
+    RegressionEvalOptions,
+    ElasticNetRegConfig,
+    WeightDecayConfig,
+    MSELossConfig,
+    KLDLossConfig,
+    TrainingHyperParams,
 )
-from .loop import train_epoch, train_iteration
+from .loop import process_epoch, process_iteration
 
 __all__ = [
-    "TrainingConfig",
-    "TrajectoryData",
+    # Configuration classes
     "ProbeOptions",
-    "train_epoch",
-    "train_iteration",
     "EarlyStoppingConfig",
     "LossConfigs",
+    "TrainingHyperParams",
+    "WeightDecayConfig",
+    "MSELossConfig",
+    "KLDLossConfig",
+    "ElasticNetRegConfig",
+    "RegressionEvalOptions",
+    # Training functions
+    "process_epoch",
+    "process_iteration",
 ]

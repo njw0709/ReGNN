@@ -8,12 +8,12 @@ from .regression import (
 )
 
 __all__ = [
-    ProbeData,
-    Snapshot,
-    Trajectory,
-    ObjectiveProbe,
-    OLSResultsProbe,
-    OLSModeratedResultsProbe,
-    VarianceInflationFactorProbe,
-    L2NormProbe,
+    "ProbeData",
+    "Snapshot",
+    "Trajectory",
+    "ObjectiveProbe",
+    "OLSResultsProbe",
+    "OLSModeratedResultsProbe",
+    "VarianceInflationFactorProbe",
+    "L2NormProbe",
 ]

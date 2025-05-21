@@ -1,7 +1,7 @@
 from typing import Sequence, Callable, Union, Tuple, List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
-from pydantic import BaseModel, Field, field_validator, ConfigDict, computed_field
+from pydantic import BaseModel, field_validator, ConfigDict, computed_field
 from .preprocess_fns import (
     binary_to_one_hot,
     multi_cat_to_one_hot,
@@ -34,7 +34,7 @@ class PreprocessStep(BaseModel):
 class DataFrameReadInConfig(BaseModel):
     """Configurations / variables needed to read in the dataframe."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=False)
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     data_path: str
     read_cols: Sequence[str]

@@ -2,16 +2,15 @@ import torch
 from regnn.model.regnn import ReGNN
 from regnn.data.dataset import ReGNNDataset
 from typing import Tuple, Callable
-from regnn.eval.base import RegressionEvalOptions
 from .utils import compute_index_prediction
-from regnn.eval.eval import (
+from regnn.eval import (
     OLS_stata,
     VIF_stata,
     OLS_statsmodel,
     VIF_statsmodel,
-    OLSModeratedResultsProbe,
-    VarianceInflationFactorProbe,
+    RegressionEvalOptions,
 )
+from regnn.probe import OLSModeratedResultsProbe, VarianceInflationFactorProbe
 
 
 def regression_eval_regnn(

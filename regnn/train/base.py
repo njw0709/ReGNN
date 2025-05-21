@@ -3,7 +3,6 @@ from pydantic import BaseModel, Field, ConfigDict
 import torch
 from regnn.eval.base import RegressionEvalOptions
 from regnn.constants import TEMP_DIR
-import os
 
 
 class EarlyStoppingConfig(BaseModel):
