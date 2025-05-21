@@ -4,9 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from regnn.model.regnn import ReGNN
 from typing import Dict, Optional, Tuple, Any, List, Callable, Union, Type
-
-from regnn.probe.fns.regnn import get_l2_length
-from regnn.probe.dataclass.base import Snapshot, ProbeData
+from regnn.probe.dataclass.base import Snapshot, ProbeData, Trajectory
 from regnn.probe.dataclass.nn import ObjectiveProbe
 from regnn.probe.dataclass.regression import L2NormProbe
 
@@ -55,6 +53,61 @@ def _apply_survey_weights(
     return loss.mean()  # Default if no weights or reduction='none' handled by loss
 
 
+def _collect_probes(
+    probes: List[Union[Type[ProbeData], Callable]],
+    data_source: str,
+    time_value: Union[float, int],
+    loss_value: Optional[float] = None,
+    model: Optional[ReGNN] = None,
+) -> Snapshot:
+    """Helper function to collect probe data.
+
+    Args:
+        probes: List of probe types or callables
+        data_source: Data source identifier
+        time_value: Time value for the snapshot
+        loss_value: Optional loss value for ObjectiveProbe
+        model: Optional model instance for probes that require model access
+
+    Returns:
+        Snapshot containing all collected probe data
+    """
+    snapshot = Snapshot(time=time_value, measurements=[])
+
+    if not probes:
+        return snapshot
+
+    for probe in probes:
+        if probe == ObjectiveProbe and loss_value is not None:
+            # Add loss probe
+            snapshot.measurements.append(
+                ObjectiveProbe(data_source=data_source, loss=loss_value)
+            )
+        elif probe == L2NormProbe:
+            # Skip L2NormProbe if no model is provided
+            if model is None:
+                print(f"Skipping {probe.__name__}: model not provided")
+                continue
+            # Use the compute method to create the L2 norm probe
+            l2_probe = L2NormProbe.compute(model, data_source=data_source)
+            snapshot.measurements.append(l2_probe)
+        elif callable(probe) and probe != ObjectiveProbe:
+            # Skip model-dependent probes if no model is provided
+            if model is None:
+                print(f"Skipping {probe.__name__}: model not provided")
+                continue
+            # Execute other probe function with model
+            try:
+                probe_data = probe(model)
+                if isinstance(probe_data, ProbeData):
+                    snapshot.measurements.append(probe_data)
+            except Exception as e:
+                # Handle probe execution errors
+                print(f"Error executing probe {probe.__name__}: {e}")
+
+    return snapshot
+
+
 def process_iteration(
     model: ReGNN,
     sample: Dict[str, torch.Tensor],
@@ -62,13 +115,15 @@ def process_iteration(
     optimizer: Optional[optim.Optimizer] = None,
     regularization: Optional[nn.Module] = None,
     lambda_reg: float = 0.1,
-    survey_weights_active: bool = True,  # Renamed for clarity
-    vae_loss_active: bool = False,  # Renamed for clarity
+    survey_weights_active: bool = True,
+    vae_loss_active: bool = False,
     is_training: bool = True,
-    probes: Optional[List[Union[Type[ProbeData], Callable]]] = None,
+    probes: List[Union[Type[ProbeData], Callable]] = [ObjectiveProbe],
     data_source: str = "train",
-    iteration: int = -1,
-) -> Tuple[float, Snapshot]:
+    epoch: int = -1,
+    batch_idx: int = 0,
+    dataloader_length: int = 1000,
+) -> Snapshot:
     """Run one iteration (batch processing) for training or evaluation.
 
     Args:
@@ -81,19 +136,20 @@ def process_iteration(
         survey_weights_active: Whether to use survey weights
         vae_loss_active: Whether VAE loss is active
         is_training: Whether in training mode
-        probes: List of probe types or probe functions to collect
+        probes: List of probe types or probe functions to collect, defaults to [ObjectiveProbe]
         data_source: Source of data ('train', 'test', 'validate')
-        iteration: Current iteration number
+        epoch: Current epoch number
+        batch_idx: Current batch index
+        dataloader_length: Length of the dataloader for normalizing iteration
 
     Returns:
-        Tuple containing the loss value and a Snapshot of collected probe data
+        Snapshot containing probe data including loss value
     """
 
     if is_training and optimizer:
         optimizer.zero_grad()
 
     # Forward pass
-    # Model's forward pass output (single tensor or tuple) is handled by _compute_loss based on vae_loss_active.
     outputs = model(
         sample["moderators"], sample["focal_predictor"], sample["controlled_predictors"]
     )
@@ -103,17 +159,12 @@ def process_iteration(
 
     # Apply additive regularization penalty if needed
     if regularization is not None and lambda_reg > 0:
-        # Note: Weight decay is handled by optimizer. This is for additive penalties.
         loss += _apply_regularization(model, regularization, lambda_reg)
 
     # Apply survey weights if needed and loss reduction is 'none'
-    # (MSELoss with reduction='none' returns per-element losses)
     if survey_weights_active and loss.ndim > 0:  # Check if loss is not scalar
-        # and loss_function has reduction='none' (implicit assumption)
         loss = _apply_survey_weights(loss, sample)
-    elif (
-        loss.ndim > 0
-    ):  # If loss is not scalar (e.g. reduction='none') but no survey weights
+    elif loss.ndim > 0:  # If loss is not scalar but no survey weights
         loss = loss.mean()
 
     if is_training and optimizer:
@@ -122,28 +173,19 @@ def process_iteration(
 
     loss_value = loss.item()
 
-    # Create a snapshot with requested probes
-    snapshot = Snapshot(time=iteration, measurements=[])
+    # Calculate normalized iteration as decimal
+    decimal_iteration = epoch + (batch_idx + 1) / dataloader_length
 
-    if probes:
-        for probe in probes:
-            # Handle different types of probes
-            if probe == ObjectiveProbe:
-                # Add loss probe
-                snapshot.measurements.append(
-                    ObjectiveProbe(data_source=data_source, loss=loss_value)
-                )
-            elif callable(probe):
-                # Execute probe function with model
-                try:
-                    probe_data = probe(model)
-                    if isinstance(probe_data, ProbeData):
-                        snapshot.measurements.append(probe_data)
-                except Exception as e:
-                    # Handle probe execution errors
-                    print(f"Error executing probe {probe.__name__}: {e}")
+    # Collect probes
+    snapshot = _collect_probes(
+        probes=probes,
+        data_source=data_source,
+        time_value=decimal_iteration,
+        loss_value=loss_value,
+        model=model,
+    )
 
-    return loss_value, snapshot
+    return snapshot
 
 
 def process_epoch(
@@ -153,13 +195,13 @@ def process_epoch(
     optimizer: Optional[optim.Optimizer] = None,
     regularization: Optional[nn.Module] = None,
     lambda_reg: float = 0.1,
-    survey_weights_active: bool = True,  # Renamed
-    vae_loss_active: bool = False,  # Renamed
+    survey_weights_active: bool = True,
+    vae_loss_active: bool = False,
     is_training: bool = True,
-    probes: Optional[List[Union[Type[ProbeData], Callable]]] = None,
+    probes: List[Union[Type[ProbeData], Callable]] = [ObjectiveProbe],
     epoch: int = -1,
-    device: str = "cpu",  # Added device for potential model.compute_l2_lengths
-) -> Tuple[float, Snapshot]:
+    device: str = "cpu",
+) -> Tuple[Snapshot, Trajectory]:
     """Run one epoch of training or evaluation.
 
     Args:
@@ -172,12 +214,14 @@ def process_epoch(
         survey_weights_active: Whether to use survey weights
         vae_loss_active: Whether VAE loss is active
         is_training: Whether in training mode
-        probes: List of probe types or probe functions to collect
+        probes: List of probe types or probe functions to collect, defaults to [ObjectiveProbe]
         epoch: Current epoch number
         device: Device to run on
 
     Returns:
-        Tuple containing the epoch loss value and a Snapshot of collected probe data
+        Tuple containing:
+            - Epoch-level snapshot with aggregated metrics
+            - Trajectory containing all batch-level snapshots
     """
 
     original_return_logvar_state = None
@@ -195,14 +239,17 @@ def process_epoch(
     running_loss = 0.0
     num_batches = 0
     data_source = "train" if is_training else "validate"
-    epoch_snapshots = []
+    batch_trajectory = Trajectory()
+
+    # Get dataloader length for decimal iteration calculation
+    dataloader_length = len(dataloader)
 
     with torch.set_grad_enabled(is_training):  # Manage gradient calculation context
         for batch_idx, sample in enumerate(dataloader):
             # Move sample to device if not already done by DataLoader
             # sample = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in sample.items()}
 
-            batch_loss, batch_snapshot = process_iteration(
+            batch_snapshot = process_iteration(
                 model=model,
                 sample=sample,
                 loss_function=loss_function,
@@ -214,44 +261,37 @@ def process_epoch(
                 is_training=is_training,
                 probes=probes,
                 data_source=data_source,
-                iteration={"epoch": epoch, "batch": batch_idx},
+                epoch=epoch,
+                batch_idx=batch_idx,
+                dataloader_length=dataloader_length,
             )
-            running_loss += batch_loss
-            num_batches += 1
-            epoch_snapshots.append(batch_snapshot)
 
+            # Extract loss from the snapshot
+            if batch_snapshot.measurements:
+                loss_probes = [
+                    m
+                    for m in batch_snapshot.measurements
+                    if isinstance(m, ObjectiveProbe)
+                ]
+                if loss_probes:
+                    running_loss += loss_probes[0].loss
+                    num_batches += 1
+
+            batch_trajectory.append(batch_snapshot)
+
+    # Calculate average loss for the epoch
     epoch_loss = running_loss / num_batches if num_batches > 0 else 0.0
 
-    # Create epoch-level snapshot
-    epoch_snapshot = Snapshot(time=epoch, measurements=[])
-
-    # Add epoch-level probes
-    if probes:
-        # Add ObjectiveProbe with epoch loss
-        if ObjectiveProbe in probes:
-            epoch_snapshot.measurements.append(
-                ObjectiveProbe(data_source=data_source, loss=epoch_loss)
-            )
-
-        # Add any model-level probes that are requested
-        for probe in probes:
-            if callable(probe) and probe != ObjectiveProbe:
-                try:
-                    # Execute model-level probes
-                    if probe == get_l2_length:
-                        l2_data = probe(model)
-                        l2_probe = L2NormProbe.from_dict(
-                            l2_data, data_source=data_source
-                        )
-                        epoch_snapshot.measurements.append(l2_probe)
-                    else:
-                        probe_data = probe(model)
-                        if isinstance(probe_data, ProbeData):
-                            epoch_snapshot.measurements.append(probe_data)
-                except Exception as e:
-                    print(f"Error executing probe {probe.__name__}: {e}")
+    # Collect epoch-level probes
+    epoch_snapshot = _collect_probes(
+        probes=probes,
+        data_source=data_source,
+        time_value=float(epoch),
+        loss_value=epoch_loss,
+        model=model,
+    )
 
     if hasattr(model, "return_logvar") and original_return_logvar_state is not None:
         model.return_logvar = original_return_logvar_state  # Restore original state
 
-    return epoch_loss, epoch_snapshot
+    return epoch_snapshot, batch_trajectory

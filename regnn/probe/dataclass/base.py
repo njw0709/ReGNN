@@ -1,4 +1,4 @@
-from typing import List, Literal, Union, Dict, Type
+from typing import List, Literal, Union, Dict, Type, Tuple
 from pydantic import BaseModel, Field, ConfigDict, computed_field
 
 
@@ -45,6 +45,119 @@ class Trajectory(BaseModel):
     def times(self) -> List[Union[int, float, Dict[str, float]]]:
         """Returns a list of times from all snapshots in chronological order."""
         return [snapshot.time for snapshot in self.data]
+
+    def at(
+        self,
+        time: Union[int, float, Dict[str, float]],
+        tolerance: float = 1e-10,
+    ) -> Union[Snapshot, List[Snapshot], None]:
+        """
+        Get snapshot(s) at a specific time point.
+
+        Args:
+            time: The time point to retrieve snapshots for. Can be:
+                - A scalar (int/float) for simple time points
+                - A dictionary matching the structure of snapshot times
+            tolerance: Floating point tolerance for time comparison (default: 1e-10)
+
+        Returns:
+            - Single Snapshot if exact match is found
+            - List of Snapshots if multiple matches within tolerance
+            - None if no matches found
+
+        Example:
+            >>> trajectory = Trajectory()
+            >>> # Get snapshot at epoch 1
+            >>> snapshot = trajectory.at(1)
+            >>> # Get snapshot at specific iteration
+            >>> snapshot = trajectory.at({"epoch": 1, "iteration": 0.5})
+        """
+        matches = []
+
+        for snapshot in self.data:
+            if isinstance(time, (int, float)) and isinstance(
+                snapshot.time, (int, float)
+            ):
+                if abs(snapshot.time - time) <= tolerance:
+                    matches.append(snapshot)
+            elif isinstance(time, dict) and isinstance(snapshot.time, dict):
+                # All keys in time must exist in snapshot.time and values must match within tolerance
+                if all(
+                    k in snapshot.time and abs(snapshot.time[k] - v) <= tolerance
+                    for k, v in time.items()
+                ):
+                    matches.append(snapshot)
+
+        if not matches:
+            return None
+        elif len(matches) == 1:
+            return matches[0]
+        return matches
+
+    def extend(self, other: "Trajectory") -> None:
+        """
+        Extend this trajectory with snapshots from another trajectory.
+
+        Args:
+            other: Another Trajectory instance whose snapshots will be added to this one
+
+        Example:
+            >>> train_trajectory = Trajectory()
+            >>> val_trajectory = Trajectory()
+            >>> # After collecting some snapshots...
+            >>> train_trajectory.extend(val_trajectory)
+
+        Note:
+            The snapshots are added in the order they appear in the other trajectory.
+            No sorting or deduplication is performed.
+        """
+        if not isinstance(other, Trajectory):
+            raise TypeError(f"Expected Trajectory, got {type(other)}")
+        self.data.extend(other.data)
+
+    def append(
+        self,
+        snapshots: Union[Snapshot, List[Snapshot], Tuple[Snapshot, List[Snapshot]]],
+    ) -> None:
+        """
+        Append one or more snapshots to the trajectory.
+
+        Args:
+            snapshots: Can be one of:
+                - A single Snapshot
+                - A list of Snapshots
+                - A tuple of (epoch_snapshot, batch_snapshots) as returned by process_epoch
+
+        Example:
+            >>> trajectory = Trajectory()
+            >>> # Append single snapshot
+            >>> trajectory.append(snapshot)
+            >>> # Append list of snapshots
+            >>> trajectory.append([snapshot1, snapshot2])
+            >>> # Append epoch and batch snapshots
+            >>> trajectory.append((epoch_snapshot, batch_snapshots))
+        """
+        if isinstance(snapshots, (list, tuple)):
+            # Handle tuple from process_epoch
+            if (
+                isinstance(snapshots, tuple)
+                and len(snapshots) == 2
+                and isinstance(snapshots[0], Snapshot)
+                and isinstance(snapshots[1], list)
+            ):
+                epoch_snapshot, batch_snapshots = snapshots
+                self.data.extend(batch_snapshots)
+                self.data.append(epoch_snapshot)
+            # Handle list of snapshots
+            else:
+                self.data.extend(snapshots)
+        # Handle single snapshot
+        elif isinstance(snapshots, Snapshot):
+            self.data.append(snapshots)
+        else:
+            raise TypeError(
+                f"Expected Snapshot, List[Snapshot], or Tuple[Snapshot, List[Snapshot]], got {type(snapshots)}"
+            )
 
     def select(self, probe_type: Type[ProbeData]) -> "Trajectory":
         """

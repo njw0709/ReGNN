@@ -67,3 +67,19 @@ class L2NormProbe(ProbeData):
             main_norm=data.get("main", -1),
             index_norm=data.get("index", -1),
         )
+
+    @classmethod
+    def compute(cls, model, data_source: str = "train") -> "L2NormProbe":
+        """Compute L2 norms for model parameters and return a populated L2NormProbe instance.
+
+        Args:
+            model: The model to compute L2 norms for
+            data_source: Source of data ('train', 'test', 'validate')
+
+        Returns:
+            L2NormProbe instance with computed norms
+        """
+        from regnn.probe.fns.regnn import get_l2_length
+
+        l2_data = get_l2_length(model)
+        return cls.from_dict(l2_data, data_source=data_source)

@@ -4,6 +4,7 @@ from .regression import (
     OLSModeratedResultsProbe,
     OLSResultsProbe,
     VarianceInflationFactorProbe,
+    L2NormProbe,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     OLSResultsProbe,
     OLSModeratedResultsProbe,
     VarianceInflationFactorProbe,
+    L2NormProbe,
 ]
