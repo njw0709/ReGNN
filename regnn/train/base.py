@@ -2,6 +2,8 @@ from typing import Optional, Literal
 from pydantic import BaseModel, Field, ConfigDict
 import torch
 from regnn.eval.base import RegressionEvalOptions
+from regnn.constants import TEMP_DIR
+import os
 
 
 class EarlyStoppingConfig(BaseModel):
@@ -10,7 +12,9 @@ class EarlyStoppingConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=False)
 
     enabled: bool = Field(True, description="Whether to use early stopping")
-    criterion: float = Field(0.01, gt=0.0, description="Threshold for early stopping")
+    criterion: float = Field(
+        0.01, gt=0.0, description="Threshold for early stopping (p-value)"
+    )
     patience: int = Field(
         100, gt=0, description="Number of epochs after which to stop if no improvement"
     )
@@ -114,6 +118,9 @@ class ProbeOptions(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=False)
 
     # File and model saving
+    save_dir: str = Field(
+        TEMP_DIR, description="where the probed informations are saved"
+    )
     file_id: Optional[str] = Field(None, description="Identifier for saving files")
     save_model: bool = Field(False, description="Whether to save the model")
     save_model_epochs: int = Field(1, ge=1, description="Epochs to save model.")
