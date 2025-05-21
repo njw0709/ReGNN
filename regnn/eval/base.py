@@ -71,7 +71,7 @@ class RegressionEvalOptions(BaseModel):
         "statsmodels", description="Which evaluation function to use"
     )
     evaluate: bool = Field(False, description="Whether to evaluate during training")
-    eval_epoch: int = Field(10, gt=0, description="Frequency of evaluation in epochs")
+    eval_epochs: int = Field(10, gt=1, description="Frequency of evaluation in epochs")
     focal_predictor_process_options: FocalPredictorPreProcessOptions = Field(
         FocalPredictorPreProcessOptions(
             threshold=False, thresholded_value=0.0, interaction_direction="positive"
@@ -80,6 +80,10 @@ class RegressionEvalOptions(BaseModel):
     )
     index_column_name: str = Field(
         "summary_index", description="name of the produced summary index"
+    )
+    post_training_eval: bool = Field(
+        True,
+        description="whether to run regression on whole dataset after the training is done",
     )
 
     @field_validator("regress_cmd")

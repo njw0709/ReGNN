@@ -1,6 +1,5 @@
 from typing import Optional, Any, List
 from pydantic import BaseModel, Field, ConfigDict, model_validator
-from regnn.eval.base import RegressionEvalOptions
 from regnn.model.base import ReGNNConfig
 from regnn.train.base import TrainingHyperParams, ProbeOptions, KLDLossConfig
 from regnn.data.base import ReGNNDatasetConfig, DataFrameReadInConfig
@@ -32,9 +31,7 @@ class MacroConfig(BaseModel):
     training: TrainingHyperParams = Field(
         default_factory=TrainingHyperParams, description="Training hyperparameters"
     )
-    evaluation: RegressionEvalOptions = Field(
-        ..., description="Evaluation configuration"
-    )
+
     probe: ProbeOptions = Field(
         default_factory=ProbeOptions,
         description="While-training probe configuration",

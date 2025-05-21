@@ -2,35 +2,40 @@ from typing import Dict, List, Optional, Tuple, Union, Any
 
 import numpy as np
 import pandas as pd
-import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from regnn.data.datautils import train_test_split  # For splitting dataset
+from regnn.data.datautils import train_test_split
+from regnn.data.dataset import ReGNNDataset
 from regnn.model.regnn import ReGNN
 from regnn.model.custom_loss import (
     vae_kld_regularized_loss,
     elasticnet_loss,
     lasso_loss,
 )
-from regnn.eval.eval import compute_index_prediction  # For intermediate index
 from regnn.train.base import (
     TrainingHyperParams,  # Explicitly import for type hint
     MSELossConfig,  # Specific MSE config
     KLDLossConfig,  # Specific KLD config
     ElasticNetRegConfig,  # Specific Regularization Config
 )
-from regnn.probe import Trajectory
+from regnn.probe import Trajectory, Snapshot
 from regnn.train.loop import process_epoch  # Use process_epoch
+from regnn.eval.base import RegressionEvalOptions
+from regnn.probe.dataclass.nn import ObjectiveProbe
+from regnn.probe.dataclass.regression import (
+    L2NormProbe,
+    OLSModeratedResultsProbe,
+    VarianceInflationFactorProbe,
+)
 
 from .base import MacroConfig  # The main configuration object
 from .preprocess import preprocess  # For data loading and preprocessing
 from .evaluator import (
-    get_regression_summary,
-    get_thresholded_value,
+    regression_eval_regnn,
 )
-from .utils import save_regnn  # For saving model
+from .utils import compute_index_prediction, save_model  # For saving model
 from .utils import compute_svd  # Added import for compute_svd function
 
 
@@ -130,8 +135,8 @@ def train(
 
     regnn_cfg = macro_config.model
     training_hp = macro_config.training
-    eval_opts = macro_config.evaluation
     probe_opts = macro_config.probe
+    regression_eval_opts = probe_opts.regression_eval_opts
 
     # 1. Preprocessing
     # The preprocess function now takes DataFrameReadInConfig and ModeratedRegressionConfig directly.
@@ -195,7 +200,10 @@ def train(
     )
 
     # 5. Training Loop
-    trajectory_data: List[Trajectory] = []
+    train_trajectory_data = Trajectory()
+    test_trajectory_data: Optional[Trajectory] = None
+    if probe_opts.get_testset_results:
+        test_trajectory_data = Trajectory()
     intermediate_indices: List[np.ndarray] = []
 
     for epoch in range(training_hp.epochs):
@@ -218,7 +226,13 @@ def train(
             and is_kld_loss
         )
 
-        epoch_loss, l2_lengths = process_epoch(
+        # Define probes based on configuration
+        probes = [ObjectiveProbe]
+        if probe_opts.get_l2_lengths:
+            probes.append(L2NormProbe)
+
+        # Process training epoch
+        train_epoch_snapshot, train_batch_trajectory = process_epoch(
             model=model,
             dataloader=dataloader,
             optimizer=optimizer,
@@ -228,19 +242,26 @@ def train(
             survey_weights_active=use_survey_weights,
             vae_loss_active=train_epoch_vae_loss_active,
             is_training=True,
-            get_l2_lengths=(
-                probe_opts.get_l2_lengths
-                if hasattr(probe_opts, "get_l2_lengths")
-                else False
-            ),
+            probes=probes,
+            epoch=epoch,
             device=training_hp.device,
         )
 
-        current_test_loss: Optional[float] = None
-        if training_hp.get_testset_results and test_dataloader:
-            test_epoch_vae_loss_active = train_epoch_vae_loss_active
+        # Extract epoch loss from snapshot
+        objective_probe = train_epoch_snapshot.get(ObjectiveProbe)
+        epoch_loss = objective_probe.loss if objective_probe else 0.0
+        printout = (
+            f"Epoch {epoch + 1}/{training_hp.epochs} | Train Loss: {epoch_loss:.6f}"
+        )
 
-            current_test_loss, _ = process_epoch(
+        # Process test dataset
+        current_test_loss: Optional[float] = None
+        test_epoch_snapshot: Optional[Snapshot] = None
+        test_batch_trajectory: Optional[Trajectory] = None
+
+        if training_hp.get_testset_results and test_dataloader:
+
+            test_epoch_snapshot, test_batch_trajectory = process_epoch(
                 model=model,
                 dataloader=test_dataloader,
                 loss_function=loss_func,
@@ -248,110 +269,98 @@ def train(
                 regularization=regularization,
                 lambda_reg=current_lambda_reg,
                 survey_weights_active=use_survey_weights,
-                vae_loss_active=test_epoch_vae_loss_active,
+                vae_loss_active=train_epoch_vae_loss_active,
                 is_training=False,
-                get_l2_lengths=False,
+                probes=probes,
+                epoch=epoch,
                 device=training_hp.device,
             )
 
-        if probe_opts.save_intermediate_index:  # Use probe_opts
+            objective_probe = test_epoch_snapshot.get(ObjectiveProbe)
+            current_test_loss = objective_probe.loss if objective_probe else 0.0
+            printout += f" | Test Loss: {current_test_loss:.6f}"
+
+        # post train epoch operations
+        if probe_opts.save_intermediate_index:
             all_moderators = all_dataset.to_tensor(device=training_hp.device)[
                 "moderators"
             ]
             idx_pred = compute_index_prediction(model, all_moderators)
             intermediate_indices.append(idx_pred.cpu().numpy())
 
-        if (
-            probe_opts.save_model_epochs
-            and epoch % probe_opts.save_model_epochs == 0
-            and probe_opts.save_model_epochs > 0
-        ):
+        if probe_opts.save_model and epoch % probe_opts.save_model_epochs == 0:
             model_file_prefix = (
-                probe_opts.file_id if probe_opts.file_id else probe_opts.model_save_name
+                f"{probe_opts.model_save_name}-{probe_opts.file_id}"
+                if probe_opts.file_id
+                else probe_opts.model_save_name
             )
-            save_regnn(model, data_id=f"{model_file_prefix}_{epoch}")
 
-        traj_epoch_data = Trajectory(
-            train_loss=epoch_loss,
-            test_loss=current_test_loss if current_test_loss is not None else -1.0,
-            l2=l2_lengths,
-            epoch_num_if_applicable=epoch + 1,
-        )
+            save_model(
+                model, model_type="regnn", data_id=f"{model_file_prefix}_{epoch}"
+            )
 
+        # Update trajectory data
+        if probe_opts.return_trajectory:
+            # Add batch-level trajectories
+            train_trajectory_data.extend(train_batch_trajectory)
+            if test_batch_trajectory:
+                test_trajectory_data.extend(test_batch_trajectory)
+            # Add epoch-level snapshots
+            train_trajectory_data.append(train_epoch_snapshot)
+            if test_epoch_snapshot:
+                test_trajectory_data.append(test_epoch_snapshot)
+
+        # run regression for evaluation
         if (
-            eval_opts.evaluate_epochs
-            and epoch % eval_opts.evaluate_epochs == 0
-            and eval_opts.evaluate_epochs > 0
+            regression_eval_opts.evaluate
+            and epoch % regression_eval_opts.eval_epochs == 0
         ):
-            quietly = (
-                (
-                    epoch
-                    % (eval_opts.evaluate_epochs * eval_opts.quiet_eval_multiplier)
-                    != 0
-                )
-                if hasattr(eval_opts, "quiet_eval_multiplier")
-                and eval_opts.quiet_eval_multiplier > 0
-                else (epoch % 30 != 0)
+            # Evaluate on training data
+            train_ols_results, train_vif_results = regression_eval_regnn(
+                model=model,
+                eval_regnn_dataset=train_dataset,
+                eval_options=regression_eval_opts,
+                device=training_hp.device,
+                data_source="train",
             )
+            train_p_val = train_ols_results.interaction_term_p_value
+            printout += f" | Train P-val: {train_p_val:.4f}"
 
-            train_moderators_eval = train_dataset.to_tensor(device=training_hp.device)[
-                "moderators"
-            ]
-            train_idx_preds_eval = (
-                compute_index_prediction(model, train_moderators_eval).cpu().numpy()
-            )
-            df_train_eval_with_preds = train_dataset.df_orig.copy()
-            df_train_eval_with_preds[eval_opts.index_column_name] = train_idx_preds_eval
-            threshold_val_train = get_thresholded_value(model, train_dataset)
-
-            reg_summary_train = get_regression_summary(
-                model,
-                train_dataset,
-                df_train_eval_with_preds,
-                training_hp,
-                regnn_cfg,
-                eval_opts,
-                threshold_val_train,
-                quietly,
-            )
-            traj_epoch_data.regression_summary = reg_summary_train
-
-            reg_summary_test = None
-            if training_hp.get_testset_results and test_dataset:
-                test_moderators_eval = test_dataset.to_tensor(
-                    device=training_hp.device
-                )["moderators"]
-                test_idx_preds_eval = (
-                    compute_index_prediction(model, test_moderators_eval).cpu().numpy()
+            # Add regression results to train trajectory
+            if probe_opts.return_trajectory:
+                train_epoch_snapshot.add(OLSModeratedResultsProbe, train_ols_results)
+                train_epoch_snapshot.add(
+                    VarianceInflationFactorProbe, train_vif_results
                 )
-                df_test_eval_with_preds = test_dataset.df_orig.copy()
-                df_test_eval_with_preds[eval_opts.index_column_name] = (
-                    test_idx_preds_eval
-                )
-                threshold_val_test = get_thresholded_value(model, test_dataset)
 
-                reg_summary_test = get_regression_summary(
-                    model,
-                    test_dataset,
-                    df_test_eval_with_preds,
-                    training_hp,
-                    regnn_cfg,
-                    eval_opts,
-                    threshold_val_test,
-                    quietly,
+            # Evaluate on test data if available
+            test_ols_results = None
+            test_vif_results = None
+            if test_dataset:
+                test_ols_results, test_vif_results = regression_eval_regnn(
+                    model=model,
+                    eval_regnn_dataset=test_dataset,
+                    eval_options=regression_eval_opts,
+                    device=training_hp.device,
+                    data_source="test",
                 )
-                traj_epoch_data.regression_summary_test = reg_summary_test
+                test_p_val = test_ols_results.interaction_term_p_value
+                printout += f" | Test P-val: {test_p_val:.4f}"
 
+                # Add regression results to test trajectory
+                if probe_opts.return_trajectory and test_epoch_snapshot:
+                    test_epoch_snapshot.add(OLSModeratedResultsProbe, test_ols_results)
+                    test_epoch_snapshot.add(
+                        VarianceInflationFactorProbe, test_vif_results
+                    )
+
+            # Early stopping check
             if training_hp.stopping_options and training_hp.stopping_options.enabled:
                 stop_opts = training_hp.stopping_options
-                p_val_train = (
-                    reg_summary_train.get("interaction term p value", 1.0)
-                    if reg_summary_train
-                    else 1.0
-                )
+                p_val_train = train_p_val
                 p_val_test = (
-                    reg_summary_test.get("interaction term p value", 1.0)
-                    if reg_summary_test
+                    test_ols_results.interaction_term_p_value
+                    if test_ols_results
                     else 1.0
                 )
 
@@ -365,50 +374,24 @@ def train(
                     and epoch > stop_opts.patience
                 ):
                     print(f"Reached early stopping criterion at epoch: {epoch}")
-                    if training_hp.return_trajectory:
-                        trajectory_data.append(traj_epoch_data)
                     break
 
-        if training_hp.return_trajectory:
-            trajectory_data.append(traj_epoch_data)
-
-        printout = (
-            f"Epoch {epoch + 1}/{training_hp.epochs} | Train Loss: {epoch_loss:.6f}"
-        )
-        if current_test_loss is not None:
-            printout += f" | Test Loss: {current_test_loss:.6f}"
-        if (
-            eval_opts.evaluate_epochs
-            and epoch % eval_opts.evaluate_epochs == 0
-            and eval_opts.evaluate_epochs > 0
-        ):
-            if traj_epoch_data.regression_summary:
-                printout += f" | Train P-val: {traj_epoch_data.regression_summary.get('interaction term p value'):.4f}"
-            if traj_epoch_data.regression_summary_test:
-                printout += f" | Test P-val: {traj_epoch_data.regression_summary_test.get('interaction term p value'):.4f}"
         print(printout)
 
-    if eval_opts.evaluate_final:
-        final_moderators = all_dataset.to_tensor(device=training_hp.device)[
-            "moderators"
-        ]
-        final_idx_preds = (
-            compute_index_prediction(model, final_moderators).cpu().numpy()
+    if regression_eval_opts.post_training_eval:
+        # Final evaluation on all data
+        final_ols_results, final_vif_results = regression_eval_regnn(
+            model=model,
+            eval_regnn_dataset=all_dataset,
+            eval_options=regression_eval_opts,
+            device=training_hp.device,
+            data_source="all",
         )
-        df_final_with_preds = all_dataset.df_orig.copy()
-        df_final_with_preds[eval_opts.index_column_name] = final_idx_preds
-        final_threshold_val = get_thresholded_value(model, all_dataset)
-
-        final_summary = get_regression_summary(
-            model,
-            all_dataset,
-            df_final_with_preds,
-            training_hp,
-            regnn_cfg,
-            eval_opts,
-            final_threshold_val,
-            quietly=False,
-        )
+        final_summary = {
+            "interaction term p value": final_ols_results.interaction_term_p_value,
+            "interaction term coefficient": final_ols_results.interaction_term_coefficient,
+            "vif": final_vif_results.vif_value,
+        }
         print(f"Final evaluation summary: {final_summary}")
 
     if probe_opts.save_intermediate_index and intermediate_indices:
@@ -422,6 +405,6 @@ def train(
         df_indices.to_stata(indices_path)
         print(f"Intermediate indices saved to {indices_path}")
 
-    if training_hp.return_trajectory:
-        return model, trajectory_data
+    if probe_opts.return_trajectory:
+        return model, train_trajectory_data, test_trajectory_data
     return model

@@ -1,4 +1,4 @@
-from typing import List, Literal, Union, Dict, Type, Tuple
+from typing import List, Literal, Union, Dict, Type, Tuple, Optional
 from pydantic import BaseModel, Field, ConfigDict, computed_field
 
 
@@ -25,6 +25,42 @@ class Snapshot(BaseModel):
     measurements: List[ProbeData] = Field(
         default_factory=list, description="List of all probe measurements at t=time."
     )
+
+    def get(self, probe_type: Type[ProbeData]) -> Optional[ProbeData]:
+        """
+        Get the first measurement of the specified probe type.
+
+        Args:
+            probe_type: The type of probe data to retrieve (e.g., ObjectiveProbe, L2NormProbe)
+
+        Returns:
+            The first matching probe data instance, or None if no match is found
+
+        Example:
+            >>> snapshot = Snapshot(...)
+            >>> objective_data = snapshot.get(ObjectiveProbe)
+            >>> if objective_data:
+            >>>     print(f"Loss: {objective_data.loss}")
+        """
+        return next((m for m in self.measurements if isinstance(m, probe_type)), None)
+
+    def get_all(self, probe_type: Type[ProbeData]) -> List[ProbeData]:
+        """
+        Get all measurements of the specified probe type.
+
+        Args:
+            probe_type: The type of probe data to retrieve (e.g., ObjectiveProbe, L2NormProbe)
+
+        Returns:
+            List of all matching probe data instances
+
+        Example:
+            >>> snapshot = Snapshot(...)
+            >>> all_objectives = snapshot.get_all(ObjectiveProbe)
+            >>> for obj in all_objectives:
+            >>>     print(f"Loss: {obj.loss}")
+        """
+        return [m for m in self.measurements if isinstance(m, probe_type)]
 
 
 class Trajectory(BaseModel):

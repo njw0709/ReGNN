@@ -1,6 +1,7 @@
 from typing import Optional, Literal
 from pydantic import BaseModel, Field, ConfigDict
 import torch
+from regnn.eval.base import RegressionEvalOptions
 
 
 class EarlyStoppingConfig(BaseModel):
@@ -115,11 +116,14 @@ class ProbeOptions(BaseModel):
     # File and model saving
     file_id: Optional[str] = Field(None, description="Identifier for saving files")
     save_model: bool = Field(False, description="Whether to save the model")
+    save_model_epochs: int = Field(1, ge=1, description="Epochs to save model.")
     model_save_name: str = Field("regnn_", description="model checkpoint save name")
     save_intermediate_index: bool = Field(
         False, description="Whether to save intermediate indices"
     )
-
+    regression_eval_opts: Optional[RegressionEvalOptions] = Field(
+        None, description="regression eval options"
+    )
     # Output behavior
     return_trajectory: bool = Field(
         False, description="Whether to return training trajectory"
