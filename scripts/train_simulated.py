@@ -18,6 +18,7 @@ from regnn.train import (
     WeightDecayConfig,
 )
 from regnn.macroutils import preprocess  # For data loading and preprocessing
+from regnn.probe import Trajectory
 
 
 def main():
@@ -85,14 +86,14 @@ def main():
 
     # 4. TrainingHyperParams
     training_hp = TrainingHyperParams(
-        epochs=50,
-        batch_size=5000,
-        lr=0.001,
+        epochs=8,
+        batch_size=1000,
+        lr=0.005,
         train_test_split_ratio=0.8,
         loss_options=MSELossConfig(
             reduction="mean",
             weight_decay=WeightDecayConfig(
-                weight_decay_nn=0.01, weight_decay_regression=0.0
+                weight_decay_nn=0.0, weight_decay_regression=0.01
             ),
         ),
         device="cuda",
@@ -102,9 +103,10 @@ def main():
     probe_opts = ProbeOptions(
         save_dir=output_model_dir,
         file_id="01",
-        save_model_epochs=10,
-        model_save_name="sim_regnn_model_T_Y",
-        save_intermediate_index=False,  # Default value
+        save_model_epochs=5,
+        save_model=True,
+        model_save_name="sim_T_Y",
+        save_intermediate_index=True,  # Default value
         regression_eval_opts=RegressionEvalOptions(
             evaluation_function="stata",
             evaluate=True,
@@ -134,6 +136,10 @@ def main():
 
     if probe_opts.return_trajectory:
         model, train_trajectory, test_trajectory = training_output
+        with open(os.path.join(probe_opts.save_dir, "train_traj.json"), "w") as f:
+            f.write(train_trajectory.model_dump_json(indent=4))
+        with open(os.path.join(probe_opts.save_dir, "test_traj.json"), "w") as f:
+            f.write(test_trajectory.model_dump_json(indent=4))
         print("Training complete. Model and trajectories returned.")
         if train_trajectory:
             print("Last training snapshot:", train_trajectory[-1])
@@ -144,6 +150,10 @@ def main():
         print("Training complete. Model returned.")
 
     print("Script finished.")
+
+    # load in json
+    traj = Trajectory.model_validate_json(train_trajectory.model_dump_json(indent=4))
+    print(traj)
 
 
 if __name__ == "__main__":

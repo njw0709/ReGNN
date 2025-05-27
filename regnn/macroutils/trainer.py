@@ -185,9 +185,11 @@ def train(
                 "moderators"
             ]
             idx_pred = compute_index_prediction(model, all_moderators)
-            intermediate_indices.append(idx_pred.cpu().numpy())
+            intermediate_indices.append(idx_pred)
 
-        if probe_opts.save_model and epoch % probe_opts.save_model_epochs == 0:
+        if (probe_opts.save_model and epoch % probe_opts.save_model_epochs == 0) or (
+            probe_opts.save_model and epoch == training_hp.epochs - 1
+        ):
             model_file_prefix = (
                 f"{probe_opts.model_save_name}-{probe_opts.file_id}"
                 if probe_opts.file_id
@@ -242,7 +244,7 @@ def train(
                     eval_regnn_dataset=test_dataset,
                     eval_options=regression_eval_opts,
                     device=training_hp.device,
-                    data_source="test",
+                    data_source="validate",
                 )
                 test_p_val = test_ols_results.interaction_pval
                 printout += f" | Test P-val: {test_p_val:.4f}"
@@ -293,7 +295,14 @@ def train(
     if probe_opts.save_intermediate_index and intermediate_indices:
         intermediate_indices_np = np.hstack(intermediate_indices)
         df_indices = pd.DataFrame(intermediate_indices_np)
-        indices_path = os.path.join(probe_opts.save_dir, "indices.dta")
+        model_file_prefix = (
+            f"{probe_opts.model_save_name}-{probe_opts.file_id}"
+            if probe_opts.file_id
+            else probe_opts.model_save_name
+        )
+        indices_path = os.path.join(
+            probe_opts.save_dir, f"{model_file_prefix}-indices.dta"
+        )
         df_indices.to_stata(indices_path)
         print(f"Intermediate indices saved to {indices_path}")
 

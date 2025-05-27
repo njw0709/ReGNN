@@ -1,4 +1,5 @@
-from .base import ProbeData, Snapshot, Trajectory
+from .base import ProbeData
+from .trajectory import Snapshot, Trajectory
 from .nn import ObjectiveProbe
 from .regression import (
     OLSModeratedResultsProbe,

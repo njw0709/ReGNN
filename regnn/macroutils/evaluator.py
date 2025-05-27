@@ -18,7 +18,7 @@ def regression_eval_regnn(
     eval_regnn_dataset: ReGNNDataset,
     eval_options: RegressionEvalOptions,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
-    data_source: str = "test",
+    data_source: str = "validate",
 ) -> Tuple[OLSModeratedResultsProbe, VarianceInflationFactorProbe]:
     """Evaluate ReGNN model performance using probes (original function)
 

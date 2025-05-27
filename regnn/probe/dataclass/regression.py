@@ -4,7 +4,7 @@ from typing import Dict
 
 
 class OLSResultsProbe(ProbeData):
-    model_config = ConfigDict(arbitrary_types_allowed=False)
+    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
     rsquared: float = Field(..., description="R-squared value")
     adjusted_rsquared: float = Field(..., description="Adjusted R-squared value")
@@ -26,7 +26,7 @@ class OLSResultsProbe(ProbeData):
 class OLSModeratedResultsProbe(OLSResultsProbe):
     """Output from regression evaluation functions"""
 
-    model_config = ConfigDict(arbitrary_types_allowed=False)
+    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
     interaction_pval: float = Field(..., description="P-value of the interaction term")
 
     @field_validator("interaction_pval")
@@ -39,7 +39,7 @@ class OLSModeratedResultsProbe(OLSResultsProbe):
 class VarianceInflationFactorProbe(ProbeData):
     """Probe for tracking variance inflation factors"""
 
-    model_config = ConfigDict(arbitrary_types_allowed=False)
+    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
     vif_main: float = Field(
         ..., description="Variance inflation factor for main effect"
@@ -52,7 +52,7 @@ class VarianceInflationFactorProbe(ProbeData):
 class L2NormProbe(ProbeData):
     """Probe for tracking L2 norms of model parameters"""
 
-    model_config = ConfigDict(arbitrary_types_allowed=False)
+    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
     main_norm: float = Field(-1, description="L2 norm of main parameters")
     index_norm: float = Field(-1, description="L2 norm of index parameters")
@@ -79,7 +79,7 @@ class L2NormProbe(ProbeData):
         Returns:
             L2NormProbe instance with computed norms
         """
-        from regnn.probe.fns.regnn import get_l2_length
+        from regnn.probe import get_l2_length
 
         l2_data = get_l2_length(model)
         return cls.from_dict(l2_data, data_source=data_source)

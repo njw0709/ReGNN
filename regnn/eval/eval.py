@@ -13,7 +13,7 @@ from .utils import init_stata
 def OLS_stata(
     df: pd.DataFrame,
     regress_cmd: str,
-    data_source: str = "test",
+    data_source: str = "validate",
     quietly: bool = False,
     df_already_moved: bool = False,
 ) -> OLSModeratedResultsProbe:
@@ -44,7 +44,7 @@ def OLS_stata(
 def OLS_statsmodel(
     df: pd.DataFrame,
     regress_cmd: str,
-    data_source: str = "test",
+    data_source: str = "validate",
 ) -> OLSModeratedResultsProbe:
     """Python statsmodels version of OLS regression"""
     # Parse Stata regression command to get variables
