@@ -5,17 +5,24 @@ from regnn.eval.base import RegressionEvalOptions
 from regnn.constants import TEMP_DIR
 
 
-class EarlyStoppingConfig(BaseModel):
+class PValEarlyStoppingConfig(BaseModel):
     """Early stopping configuration"""
 
     model_config = ConfigDict(arbitrary_types_allowed=False)
 
     enabled: bool = Field(True, description="Whether to use early stopping")
     criterion: float = Field(
-        0.01, gt=0.0, description="Threshold for early stopping (p-value)"
+        0.01,
+        gt=0.0,
+        description="If both training and testing p-values reach below this threshold, stop training",
     )
     patience: int = Field(
-        100, gt=0, description="Number of epochs after which to stop if no improvement"
+        30, gt=0, description="Number of epochs after which to stop if no improvement"
+    )
+    n_sequential_epochs_to_pass: int = Field(
+        1,
+        ge=1,
+        description="If N sequential epochs that pass the criterion, then stop.",
     )
 
 

@@ -1,7 +1,12 @@
 from typing import Any, List, Union
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from regnn.model import ReGNNConfig
-from regnn.train import TrainingHyperParams, ProbeOptions, KLDLossConfig
+from regnn.train import (
+    TrainingHyperParams,
+    ProbeOptions,
+    KLDLossConfig,
+    PValEarlyStoppingConfig,
+)
 from regnn.data import DataFrameReadInConfig
 
 
@@ -135,4 +140,32 @@ class MacroConfig(BaseModel):
                 f"regression config uses '{regression_index}' but "
                 f"probe regression_eval_opts uses '{probe_index}'"
             )
+        return self
+
+    @model_validator(mode="after")
+    def validate_early_stopping_regression(self) -> "MacroConfig":
+        """
+        Validates that regression evaluation is available when PValEarlyStoppingConfig is enabled.
+        Also ensures that test set results are enabled since they are needed for early stopping validation.
+        """
+        if (
+            isinstance(self.training.stopping_options, PValEarlyStoppingConfig)
+            and self.training.stopping_options.enabled
+        ):
+            if not self.probe.regression_eval_opts:
+                raise ValueError(
+                    "PValEarlyStoppingConfig is enabled but regression_eval_opts is not set in probe options. "
+                    "Regression evaluation is required for p-value based early stopping."
+                )
+            if not self.probe.regression_eval_opts.evaluate:
+                raise ValueError(
+                    "PValEarlyStoppingConfig is enabled but regression evaluation is disabled "
+                    "(probe.regression_eval_opts.evaluate=False). "
+                    "Regression evaluation must be enabled for p-value based early stopping."
+                )
+            if not self.probe.get_testset_results:
+                raise ValueError(
+                    "PValEarlyStoppingConfig is enabled but get_testset_results is disabled in probe options. "
+                    "Test set results are required for p-value based early stopping validation."
+                )
         return self

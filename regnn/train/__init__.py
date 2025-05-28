@@ -1,6 +1,6 @@
 from .base import (
     ProbeOptions,
-    EarlyStoppingConfig,
+    PValEarlyStoppingConfig,
     LossConfigs,
     RegressionEvalOptions,
     ElasticNetRegConfig,
@@ -14,7 +14,7 @@ from .loop import process_epoch, process_iteration
 __all__ = [
     # Configuration classes
     "ProbeOptions",
-    "EarlyStoppingConfig",
+    "PValEarlyStoppingConfig",
     "LossConfigs",
     "TrainingHyperParams",
     "WeightDecayConfig",
