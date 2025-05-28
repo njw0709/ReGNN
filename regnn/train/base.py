@@ -107,7 +107,7 @@ class TrainingHyperParams(BaseModel):
         description="seed to use for shuffling indices to use for splitting train and test set",
     )
 
-    stopping_options: Optional[EarlyStoppingConfig] = Field(
+    stopping_options: Optional[PValEarlyStoppingConfig] = Field(
         default=None,
         description="Optional early stopping configuration. If None, early stopping will be disabled.",
     )

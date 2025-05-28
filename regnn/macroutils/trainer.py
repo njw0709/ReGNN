@@ -105,6 +105,12 @@ def train(
         test_trajectory_data = Trajectory()
     intermediate_indices: List[np.ndarray] = []
 
+    # Extra: Early stopping
+    if training_hp.stopping_options and training_hp.stopping_options.enabled:
+        n_epochs_passed = 0
+    else:
+        n_epochs_passed = None
+
     for epoch in range(training_hp.epochs):
         current_lambda_reg = 0.0
         if training_hp.loss_options.regularization:
@@ -218,7 +224,7 @@ def train(
         if (
             regression_eval_opts.evaluate
             and epoch % regression_eval_opts.eval_epochs == 0
-        ):
+        ) or (training_hp.stopping_options.enabled and n_epochs_passed > 0):
             # Evaluate on training data
             train_ols_results, train_vif_results = regression_eval_regnn(
                 model=model,
@@ -244,7 +250,7 @@ def train(
                     eval_regnn_dataset=test_dataset,
                     eval_options=regression_eval_opts,
                     device=training_hp.device,
-                    data_source="validate",
+                    data_source="test",
                 )
                 test_p_val = test_ols_results.interaction_pval
                 printout += f" | Test P-val: {test_p_val:.4f}"
@@ -266,13 +272,22 @@ def train(
                     p_val_train < stop_opts.criterion
                     and (
                         p_val_test < stop_opts.criterion
-                        if training_hp.get_testset_results and test_dataset
+                        if probe_opts.get_testset_results and test_dataset
                         else True
                     )
                     and epoch > stop_opts.patience
                 ):
-                    print(f"Reached early stopping criterion at epoch: {epoch}")
-                    break
+                    n_epochs_passed += 1
+                    if (
+                        n_epochs_passed
+                        >= training_hp.stopping_options.n_sequential_epochs_to_pass
+                    ):
+                        print(f"Reached early stopping criterion at epoch: {epoch}")
+                        break
+                    else:
+                        print(
+                            f"Passed criterion at epoch: {epoch}, {n_epochs_passed}/{training_hp.stopping_options.n_sequential_epochs_to_pass}"
+                        )
 
         print(printout)
 

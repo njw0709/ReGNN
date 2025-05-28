@@ -237,7 +237,7 @@ def process_epoch(
 
     running_loss = 0.0
     num_batches = 0
-    data_source = "train" if is_training else "validate"
+    data_source = "train" if is_training else "test"
     batch_trajectory = Trajectory()
 
     # Get dataloader length for decimal iteration calculation
