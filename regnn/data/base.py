@@ -174,8 +174,8 @@ class DataFrameReadInConfig(BaseModel):
             df = df[self.read_cols]
 
         # Convert columns to appropriate types
-        for col in self.categorical_cols + self.binary_cols + self.ordinal_cols:
-            df[col] = df[col].astype("category")
+        # for col in self.categorical_cols + self.binary_cols + self.ordinal_cols:
+        #     df[col] = df[col].astype("category")
 
         return df
 

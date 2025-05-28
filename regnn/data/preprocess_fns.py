@@ -9,7 +9,11 @@ def binary_to_one_hot(
     if binary_cats is None:
         return df
     for bc in binary_cats:
-        df[bc] = df[bc].cat.codes
+        if df[bc].dtype != "category":
+            col = df[bc].astype("category")
+        else:
+            col = df[bc]
+        df[bc] = col
     return df, binary_cats
 
 
@@ -138,8 +142,11 @@ def convert_categorical_to_ordinal(
     if ordinal_cols is None:
         ordinal_cols = df.columns
     for c in ordinal_cols:
-        df[c] = df[c].cat.codes
-        df[c] = df[c].astype("float")
+        if df[c].dtype == "float":
+            continue
+        elif df[c].dtype == "category":
+            df[c] = df[c].cat.codes
+            df[c] = df[c].astype("float")
     return df, ordinal_cols
 
 
