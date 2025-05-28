@@ -105,6 +105,7 @@ def setup_loss_and_optimizer(
     """Setup loss function, regularization, and optimizer based on TrainingHyperParams and ReGNNConfig."""
 
     loss_opts = training_hyperparams.loss_options
+    optimizer_opts = training_hyperparams.optimizer_config
     loss_func: nn.Module
     regularization: Optional[nn.Module] = None
 
@@ -144,34 +145,23 @@ def setup_loss_and_optimizer(
             )
 
     # 3. Setup Optimizer
-    weight_decay_conf = None
-    # Check if loss_opts has a 'weight_decay' attribute, which MSELossConfig and KLDLossConfig do.
-    if hasattr(loss_opts, "weight_decay") and loss_opts.weight_decay is not None:
-        weight_decay_conf = loss_opts.weight_decay
 
-    wd_nn = 0.0
-    wd_reg = 0.0
-    if weight_decay_conf:  # Ensure it's not None
-        wd_nn = (
-            weight_decay_conf.weight_decay_nn
-            if weight_decay_conf.weight_decay_nn is not None
-            else 0.0
-        )
-        wd_reg = (
-            weight_decay_conf.weight_decay_regression
-            if weight_decay_conf.weight_decay_regression is not None
-            else 0.0
-        )
+    wd_nn = optimizer_opts.weight_decay.weight_decay_nn
+    wd_reg = optimizer_opts.weight_decay.weight_decay_regression
 
     optimizer = optim.AdamW(
         [
             {
                 "params": model.index_prediction_model.parameters(),
-                "weight_decay": wd_nn,
+                "weight_decay": optimizer_opts.weight_decay.weight_decay_nn,
+                "lr": optimizer_opts.lr.lr_nn,
             },
-            {"params": model.mmr_parameters, "weight_decay": wd_reg},
+            {
+                "params": model.mmr_parameters,
+                "weight_decay": optimizer_opts.weight_decay.weight_decay_regression,
+                "lr": optimizer_opts.lr.lr_regression,
+            },
         ],
-        lr=training_hyperparams.lr,
         weight_decay=0.0,  # Top-level weight_decay is 0 as it's handled per param group
     )
     return loss_func, regularization, optimizer

@@ -394,17 +394,19 @@ class ReGNN(nn.Module):
             self.num_models = len(num_moderators)
         else:
             self.num_models = 1
-
-        # Only create controlled_var_weights if we have controlled variables
-        self.has_controlled_vars = num_controlled > 0
-        if self.has_controlled_vars:
-            self.controlled_var_weights = nn.Linear(num_controlled, 1)
+        # controlled vars other than those included as moderators
+        self.has_technical_controlled_vars = num_controlled > 0
 
         if control_moderators:
             if isinstance(num_moderators, list):
                 num_controlled = num_controlled + sum(num_moderators)
             else:
                 num_controlled = num_controlled + num_moderators
+        # Only create controlled_var_weights if we have controlled variables
+        self.has_linear_terms = num_controlled > 0
+
+        if self.has_linear_terms:
+            self.linear_weights = nn.Linear(num_controlled, 1)
 
         self.dropout_rate = dropout
         self.index_prediction_model = IndexPredictionModel(
@@ -432,9 +434,9 @@ class ReGNN(nn.Module):
             self.focal_predictor_main_weight,
             self.predicted_index_weight,
         ]
-        if self.has_controlled_vars:
+        if self.has_linear_terms:
             self.mmr_parameters.extend(
-                [param for param in self.controlled_var_weights.parameters()]
+                [param for param in self.linear_weights.parameters()]
             )
         if include_bias_focal_predictor:
             self.interactor_bias = nn.Parameter(torch.randn(1, 1))
@@ -451,22 +453,24 @@ class ReGNN(nn.Module):
         if not self.control_moderators:
             all_linear_vars = controlled_vars
         else:
-            if self.num_models == 1:
-                if self.has_controlled_vars:
+            if self.has_technical_controlled_vars and self.control_moderators:
+                if self.num_models == 1:
                     all_linear_vars = torch.cat((controlled_vars, moderators), 1)
                 else:
-                    all_linear_vars = moderators
-            else:
-                if self.has_controlled_vars:
                     all_linear_vars = torch.cat((controlled_vars, *moderators), 1)
-                else:
+            elif not self.has_technical_controlled_vars and self.control_moderators:
+                if self.num_models == 1:
                     all_linear_vars = moderators
+                else:
+                    all_linear_vars = torch.cat([*moderators], 1)
+            elif self.has_technical_controlled_vars and not self.control_moderators:
+                all_linear_vars = controlled_vars
+            else:
+                all_linear_vars = None
 
         # Only compute controlled term if we have controlled variables
         controlled_term = (
-            self.controlled_var_weights(all_linear_vars)
-            if self.has_controlled_vars
-            else 0.0
+            self.linear_weights(all_linear_vars) if self.has_linear_terms else 0.0
         )
 
         if self.vae:

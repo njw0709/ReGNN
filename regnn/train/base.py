@@ -60,7 +60,7 @@ class LossConfigs(BaseModel):
 class WeightDecayConfig(BaseModel):
     """Weight decay specific hyperparameters"""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=False)
 
     # weight decay option
     weight_decay_regression: Optional[float] = Field(
@@ -71,19 +71,38 @@ class WeightDecayConfig(BaseModel):
     )
 
 
-class MSELossConfig(LossConfigs):
-    name: str = "MSE"
+class LearningRateConfig(BaseModel):
+    """learning rate hyperparameters"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
+    # learning rate options
+    lr_regression: Optional[float] = Field(
+        0.001, ge=0.0, description="learning rate for regression coefficients"
+    )
+    lr_nn: Optional[float] = Field(
+        0.001, ge=0.0, description="learning rate for neural net"
+    )
+
+
+class OptimizerConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
     weight_decay: WeightDecayConfig = Field(
         default_factory=WeightDecayConfig, description="weight decay configurations"
     )
+    lr: LearningRateConfig = Field(
+        default_factory=LearningRateConfig, description="learning rate configurations"
+    )
+
+
+class MSELossConfig(LossConfigs):
+    name: str = "MSE"
 
 
 class KLDLossConfig(LossConfigs):
     name: str = "KLDLoss"
     lamba_reg: float = Field(0.01, ge=0, description="kld lambda (mse + lambda*kld)")
-    weight_decay: WeightDecayConfig = Field(
-        default_factory=WeightDecayConfig, description="weight decay configurations"
-    )
 
 
 class TrainingHyperParams(BaseModel):
@@ -93,7 +112,10 @@ class TrainingHyperParams(BaseModel):
 
     epochs: int = Field(100, gt=0, description="Number of training epochs")
     batch_size: int = Field(32, gt=0, description="Training batch size")
-    lr: float = Field(0.001, gt=0.0, description="Learning rate")
+    optimizer_config: OptimizerConfig = Field(
+        default_factory=OptimizerConfig,
+        description="optimizer configuration (i.e. weight decay, learning rate)",
+    )
     device: str = Field(
         "cuda" if torch.cuda.is_available() else "cpu",
         description="Device to run model on",

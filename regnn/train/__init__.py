@@ -8,6 +8,8 @@ from .base import (
     MSELossConfig,
     KLDLossConfig,
     TrainingHyperParams,
+    OptimizerConfig,
+    LearningRateConfig,
 )
 from .loop import process_epoch, process_iteration
 
@@ -22,6 +24,8 @@ __all__ = [
     "KLDLossConfig",
     "ElasticNetRegConfig",
     "RegressionEvalOptions",
+    "OptimizerConfig",
+    "LearningRateConfig",
     # Training functions
     "process_epoch",
     "process_iteration",

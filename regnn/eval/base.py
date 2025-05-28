@@ -70,7 +70,7 @@ class RegressionEvalOptions(BaseModel):
         "statsmodels", description="Which evaluation function to use"
     )
     evaluate: bool = Field(False, description="Whether to evaluate during training")
-    eval_epochs: int = Field(10, gt=1, description="Frequency of evaluation in epochs")
+    eval_epochs: int = Field(10, ge=1, description="Frequency of evaluation in epochs")
     focal_predictor_process_options: FocalPredictorPreProcessOptions = Field(
         FocalPredictorPreProcessOptions(
             threshold=False, thresholded_value=0.0, interaction_direction="positive"
