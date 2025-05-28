@@ -1,6 +1,4 @@
-import pandas as pd
-import numpy as np  # Added for dummy data generation
-import os  # Added to handle paths
+import os
 from regnn.macroutils import (
     MacroConfig,
     ModeratedRegressionConfig,
@@ -150,10 +148,6 @@ def main():
         print("Training complete. Model returned.")
 
     print("Script finished.")
-
-    # load in json
-    traj = Trajectory.model_validate_json(train_trajectory.model_dump_json(indent=4))
-    print(traj)
 
 
 if __name__ == "__main__":

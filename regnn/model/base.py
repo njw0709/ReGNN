@@ -58,6 +58,12 @@ class IndexPredictionConfig(MLPConfig):
     n_ensemble: int = Field(1, ge=1, description="Number of MLP models to ensemble")
     svd: SVDConfig = Field(default_factory=SVDConfig)
 
+    @field_validator("n_ensemble")
+    def validate_ensemble(cls, v, values):
+        if v > 1 and not values.data.get("ensemble", False):
+            raise ValueError("ensemble must be True when n_ensemble > 1")
+        return v
+
     @field_validator("svd")
     def validate_svd_k_dim(cls, v, values):
         if v.enabled and isinstance(values.data.get("num_moderators"), int):

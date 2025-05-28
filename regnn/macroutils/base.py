@@ -11,7 +11,7 @@ class ModeratedRegressionConfig(BaseModel):
     focal_predictor: str
     outcome_col: str
     controlled_cols: List[str]
-    moderators: List[str]
+    moderators: Union[List[str], List[List[str]]]
     index_column_name: Union[str, List[str]]
 
 

@@ -394,11 +394,18 @@ class ReGNN(nn.Module):
             self.num_models = len(num_moderators)
         else:
             self.num_models = 1
+
+        # Only create controlled_var_weights if we have controlled variables
+        self.has_controlled_vars = num_controlled > 0
+        if self.has_controlled_vars:
+            self.controlled_var_weights = nn.Linear(num_controlled, 1)
+
         if control_moderators:
             if isinstance(num_moderators, list):
                 num_controlled = num_controlled + sum(num_moderators)
             else:
                 num_controlled = num_controlled + num_moderators
+
         self.dropout_rate = dropout
         self.index_prediction_model = IndexPredictionModel(
             num_moderators,
@@ -416,11 +423,6 @@ class ReGNN(nn.Module):
 
         self.device = device
         self.batch_norm = batch_norm
-
-        # Only create controlled_var_weights if we have controlled variables
-        self.has_controlled_vars = num_controlled > 0
-        if self.has_controlled_vars:
-            self.controlled_var_weights = nn.Linear(num_controlled, 1)
 
         self.focal_predictor_main_weight = nn.Parameter(torch.randn(1, 1))
         self.predicted_index_weight = nn.Parameter(torch.randn(1, self.num_models))
@@ -450,9 +452,15 @@ class ReGNN(nn.Module):
             all_linear_vars = controlled_vars
         else:
             if self.num_models == 1:
-                all_linear_vars = torch.cat((controlled_vars, moderators), 1)
+                if self.has_controlled_vars:
+                    all_linear_vars = torch.cat((controlled_vars, moderators), 1)
+                else:
+                    all_linear_vars = moderators
             else:
-                all_linear_vars = torch.cat((controlled_vars, *moderators), 1)
+                if self.has_controlled_vars:
+                    all_linear_vars = torch.cat((controlled_vars, *moderators), 1)
+                else:
+                    all_linear_vars = moderators
 
         # Only compute controlled term if we have controlled variables
         controlled_term = (

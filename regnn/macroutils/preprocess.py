@@ -3,7 +3,7 @@ from regnn.data import ReGNNDatasetConfig, DataFrameReadInConfig
 from .base import ModeratedRegressionConfig
 
 
-def preprocess(
+def read_and_preprocess(
     read_config: DataFrameReadInConfig,
     regression_config: ModeratedRegressionConfig,
 ) -> ReGNNDataset:

@@ -238,6 +238,8 @@ def generate_stata_command(
             and col in data_readin_config.categorical_cols
         ):
             cmd_parts.append(f"i.{col_name}")
+        elif data_readin_config.ordinal_cols and col in data_readin_config.ordinal_cols:
+            cmd_parts.append(f"i.{col_name}")
         else:
             assert col in data_readin_config.continuous_cols
             cmd_parts.append(f"c.{col_name}")

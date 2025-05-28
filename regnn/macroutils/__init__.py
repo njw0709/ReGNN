@@ -1,6 +1,6 @@
 from .base import MacroConfig, ModeratedRegressionConfig
 from .evaluator import regression_eval_regnn
-from .preprocess import preprocess
+from .preprocess import read_and_preprocess
 from .trainer import train
 from .utils import (
     load_model,
@@ -15,7 +15,7 @@ __all__ = [
     "MacroConfig",
     "ModeratedRegressionConfig",
     "regression_eval_regnn",
-    "preprocess",
+    "read_and_preprocess",
     "train",
     "load_model",
     "save_model",

@@ -17,6 +17,7 @@ from .preprocess_fns import (
     map_to_zero_one,
 )
 from collections import defaultdict
+from pathlib import Path
 
 numeric = Union[int, float, complex, np.number]
 
@@ -95,6 +96,18 @@ class DataFrameReadInConfig(BaseModel):
     continuous_cols: List[str]
     survey_weight_col: Optional[str]
 
+    # Mapping of file extensions to their corresponding pandas read functions
+    _READ_FUNCTIONS = {
+        ".csv": pd.read_csv,
+        ".xlsx": pd.read_excel,
+        ".xls": pd.read_excel,
+        ".dta": pd.read_stata,
+        ".parquet": pd.read_parquet,
+        ".feather": pd.read_feather,
+        ".pkl": pd.read_pickle,
+        ".pickle": pd.read_pickle,
+    }
+
     @field_validator(
         "binary_cols",
         "categorical_cols",
@@ -122,10 +135,48 @@ class DataFrameReadInConfig(BaseModel):
         return v
 
     def read_df(self) -> pd.DataFrame:
-        """Read and return the dataframe."""
-        df = pd.read_stata(self.data_path, columns=self.read_cols)
-        if self.rename_dict:
-            df = df.rename(columns=self.rename_dict)
+        """Read and return the dataframe based on file extension.
+
+        Supports multiple file formats:
+        - CSV (.csv)
+        - Excel (.xlsx, .xls)
+        - Stata (.dta)
+        - Parquet (.parquet)
+        - Feather (.feather)
+        - Pickle (.pkl, .pickle)
+        """
+        file_path = Path(self.data_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"Data file not found: {self.data_path}")
+
+        file_ext = file_path.suffix.lower()
+        if file_ext not in self._READ_FUNCTIONS:
+            raise ValueError(
+                f"Unsupported file extension: {file_ext}. "
+                f"Supported extensions are: {', '.join(self._READ_FUNCTIONS.keys())}"
+            )
+
+        read_func = self._READ_FUNCTIONS[file_ext]
+
+        # Special handling for read_cols parameter based on file type
+        kwargs = {}
+        if self.read_cols:
+            if file_ext in [".csv", ".xlsx", ".xls", ".parquet", ".feather"]:
+                kwargs["usecols"] = self.read_cols
+            elif file_ext == ".dta":
+                kwargs["columns"] = self.read_cols
+            # For pickle files, we'll read all columns and filter after
+
+        df = read_func(self.data_path, **kwargs)
+
+        # For pickle files, filter columns after reading
+        if file_ext in [".pkl", ".pickle"] and self.read_cols:
+            df = df[self.read_cols]
+
+        # Convert columns to appropriate types
+        for col in self.categorical_cols + self.binary_cols + self.ordinal_cols:
+            df[col] = df[col].astype("category")
+
         return df
 
     @computed_field
