@@ -1,4 +1,5 @@
 from pydantic import Field, ConfigDict
+from typing import Optional, Dict
 from .base import ProbeData
 
 
@@ -7,4 +8,11 @@ class ObjectiveProbe(ProbeData):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
-    loss: float = Field(-1, description="loss")
+    objective: float = Field(description="The main objective value (e.g., total loss).")
+    objective_name: str = Field(
+        description="A descriptive name for the objective (e.g., 'total_loss_on_train')."
+    )
+    objective_breakdown: Optional[Dict[str, float]] = Field(
+        None,
+        description="Optional breakdown of the objective (e.g., main loss, regularization loss).",
+    )

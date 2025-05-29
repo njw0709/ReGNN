@@ -18,9 +18,7 @@ from .dataclass import (
     GetObjectiveProbeScheduleConfig,
     GetL2LengthProbeScheduleConfig,
 )
-from .fns import get_l2_length, get_gradient_norms, post_iter_action
 from .registry import PROBE_REGISTRY, register_probe
-
 
 __all__ = [
     # dataclass exports - ProbeData and specific result types
@@ -43,10 +41,6 @@ __all__ = [
     "SaveIntermediateIndexProbeScheduleConfig",
     "GetObjectiveProbeScheduleConfig",
     "GetL2LengthProbeScheduleConfig",
-    # fns exports
-    "get_l2_length",
-    "get_gradient_norms",
-    "post_iter_action",
     # registry exports
     "PROBE_REGISTRY",
     "register_probe",

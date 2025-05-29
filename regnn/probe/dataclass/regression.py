@@ -6,19 +6,21 @@ from typing import Dict, Optional
 class OLSResultsProbe(ProbeData):
     model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
-    rsquared: float = Field(..., description="R-squared value")
-    adjusted_rsquared: float = Field(..., description="Adjusted R-squared value")
-    rmse: float = Field(..., description="Root mean squared error")
+    rsquared: Optional[float] = Field(None, description="R-squared value")
+    adjusted_rsquared: Optional[float] = Field(
+        None, description="Adjusted R-squared value"
+    )
+    rmse: Optional[float] = Field(None, description="Root mean squared error")
 
     @field_validator("rsquared", "adjusted_rsquared")
-    def validate_rsquared(cls, v: float) -> float:
-        if not 0 <= v <= 1:
+    def validate_rsquared(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and not (0 <= v <= 1):
             raise ValueError("R-squared values must be between 0 and 1")
         return v
 
     @field_validator("rmse")
-    def validate_positive_float(cls, v: float) -> float:
-        if v < 0:
+    def validate_positive_float(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v < 0:
             raise ValueError("Value must be positive")
         return v
 
@@ -27,11 +29,17 @@ class OLSModeratedResultsProbe(OLSResultsProbe):
     """Output from regression evaluation functions"""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
-    interaction_pval: float = Field(..., description="P-value of the interaction term")
+    interaction_pval: float = Field(-1.0, description="P-value of the interaction term")
 
     # New fields for more comprehensive results
     coefficients: Optional[Dict[str, float]] = Field(
         None, description="All estimated coefficients from the regression model."
+    )
+    standard_errors: Optional[Dict[str, float]] = Field(
+        None, description="Standard errors for the coefficients."
+    )
+    p_values: Optional[Dict[str, float]] = Field(
+        None, description="P-values for the coefficients."
     )
     n_observations: Optional[int] = Field(
         None, ge=0, description="Number of observations used in the regression."
@@ -42,8 +50,8 @@ class OLSModeratedResultsProbe(OLSResultsProbe):
     )
 
     @field_validator("interaction_pval")
-    def validate_pval(cls, v: float) -> float:
-        if not 0 <= v <= 1:
+    def validate_pval(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and not (0 <= v <= 1):
             raise ValueError("p-value must be between 0 and 1")
         return v
 
