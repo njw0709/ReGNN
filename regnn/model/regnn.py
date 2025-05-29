@@ -482,6 +482,7 @@ class ReGNN(nn.Module):
         focal_predictor,
         controlled_vars,
         y: Union[None, torch.tensor] = None,
+        s_weights: Union[None, torch.tensor] = None,
     ):
         if self.use_closed_form_linear_weights:
             assert y is not None
@@ -559,8 +560,13 @@ class ReGNN(nn.Module):
                 [all_linear_vars, predicted_index * focal_predictor], dim=2
             )  # shape: [batch, 1, n_terms]
             X_full = X_full.squeeze(1)  # shape: [batch, n_terms]
+            if s_weights:
+                sqrt_s_weights = torch.sqrt(w)
+                X_full = X_full * sqrt_s_weights
+                y = y * sqrt_s_weights
             weights = torch.linalg.pinv(X_full) @ y
             outcome = X_full @ weights
+
         if self.vae:
             if not self.training:
                 return outcome
