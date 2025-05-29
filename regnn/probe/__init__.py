@@ -7,6 +7,8 @@ from .dataclass import (
     OLSModeratedResultsProbe,
     VarianceInflationFactorProbe,
     L2NormProbe,
+    CheckpointSavedProbeResult,
+    IntermediateIndexSavedProbeResult,
     FrequencyType,
     DataSource,
     ProbeScheduleConfig,
@@ -17,10 +19,11 @@ from .dataclass import (
     GetL2LengthProbeScheduleConfig,
 )
 from .fns import get_l2_length, get_gradient_norms, post_iter_action
+from .registry import PROBE_REGISTRY, register_probe
 
 
 __all__ = [
-    # dataclass exports
+    # dataclass exports - ProbeData and specific result types
     "ProbeData",
     "Snapshot",
     "Trajectory",
@@ -29,6 +32,9 @@ __all__ = [
     "OLSModeratedResultsProbe",
     "VarianceInflationFactorProbe",
     "L2NormProbe",
+    "CheckpointSavedProbeResult",
+    "IntermediateIndexSavedProbeResult",
+    # dataclass exports - Probe Configurations
     "FrequencyType",
     "DataSource",
     "ProbeScheduleConfig",
@@ -41,4 +47,7 @@ __all__ = [
     "get_l2_length",
     "get_gradient_norms",
     "post_iter_action",
+    # registry exports
+    "PROBE_REGISTRY",
+    "register_probe",
 ]

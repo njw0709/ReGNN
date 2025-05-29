@@ -1,6 +1,6 @@
 from pydantic import Field, ConfigDict, field_validator
 from .base import ProbeData
-from typing import Dict
+from typing import Dict, Optional
 
 
 class OLSResultsProbe(ProbeData):
@@ -28,6 +28,18 @@ class OLSModeratedResultsProbe(OLSResultsProbe):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
     interaction_pval: float = Field(..., description="P-value of the interaction term")
+
+    # New fields for more comprehensive results
+    coefficients: Optional[Dict[str, float]] = Field(
+        None, description="All estimated coefficients from the regression model."
+    )
+    n_observations: Optional[int] = Field(
+        None, ge=0, description="Number of observations used in the regression."
+    )
+    raw_summary: Optional[str] = Field(
+        None,
+        description="Raw summary string as output by the statistical package (e.g., statsmodels summary table).",
+    )
 
     @field_validator("interaction_pval")
     def validate_pval(cls, v: float) -> float:

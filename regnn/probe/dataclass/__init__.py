@@ -18,6 +18,12 @@ from .probe_config import (
     GetL2LengthProbeScheduleConfig,
 )
 
+# Import new result types
+from .results import (
+    CheckpointSavedProbeResult,
+    IntermediateIndexSavedProbeResult,
+)
+
 __all__ = [
     "ProbeData",
     "Snapshot",
@@ -27,6 +33,8 @@ __all__ = [
     "OLSModeratedResultsProbe",
     "VarianceInflationFactorProbe",
     "L2NormProbe",
+    "CheckpointSavedProbeResult",
+    "IntermediateIndexSavedProbeResult",
     "FrequencyType",
     "DataSource",
     "ProbeScheduleConfig",
