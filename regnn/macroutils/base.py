@@ -11,7 +11,9 @@ from regnn.probe import (
     RegressionEvalProbeScheduleConfig,
     DataSource,
     PValEarlyStoppingProbeScheduleConfig,
+    FrequencyType,
 )
+import warnings
 
 
 class ModeratedRegressionConfig(BaseModel):
@@ -83,10 +85,10 @@ class MacroConfig(BaseModel):
                 )
         else:
             # If survey weights are NOT specified, but loss reduction is 'none'
-            if loss_reduction == "none":
-                print(
-                    "Warning: Loss reduction is 'none', but no survey_weight_col specified. Ensure intended."
-                )
+            warnings.warn(
+                "Loss reduction is 'none', but no survey_weight_col specified. Ensure intended.",
+                UserWarning,
+            )
         return data
 
     @model_validator(mode="after")
@@ -107,8 +109,14 @@ class MacroConfig(BaseModel):
             reg_config.focal_predictor,
             reg_config.outcome_col,
             *reg_config.controlled_cols,
-            *reg_config.moderators,
         }
+
+        if reg_config.moderators:
+            if isinstance(reg_config.moderators[0], list):
+                for mod_group in reg_config.moderators:
+                    required_vars.update(mod_group)
+            else:
+                required_vars.update(reg_config.moderators)
 
         # Find any missing variables
         missing_vars = required_vars - read_cols
@@ -144,11 +152,57 @@ class MacroConfig(BaseModel):
 
         for es_schedule in early_stopping_schedules:
             for monitored_ds in es_schedule.data_sources_to_monitor:
-                if monitored_ds not in regression_eval_covered_sources:
+                found_matching_reg_eval = False
+                is_reg_eval_frequent_enough = False
+                for reg_eval_schedule in self.probe.schedules:
+                    if (
+                        isinstance(reg_eval_schedule, RegressionEvalProbeScheduleConfig)
+                        and monitored_ds in reg_eval_schedule.data_sources
+                    ):
+                        found_matching_reg_eval = True
+                        # Check frequency only if the early stopping probe itself is frequent
+                        if (
+                            es_schedule.frequency_type == FrequencyType.EPOCH
+                            and es_schedule.frequency_value == 1
+                        ):
+                            if (
+                                reg_eval_schedule.frequency_type == FrequencyType.EPOCH
+                                and reg_eval_schedule.frequency_value == 1
+                            ):
+                                is_reg_eval_frequent_enough = True
+                            else:
+                                # Matching reg eval found, but not frequent enough for an aggressive early stopper
+                                is_reg_eval_frequent_enough = (
+                                    False  # Explicitly false, warning will be issued
+                                )
+                                break  # Found a reg_eval for this ds, no need to check others for this ds
+                        else:
+                            # Early stopper is not aggressive, so any reg_eval frequency is fine for existence
+                            is_reg_eval_frequent_enough = (
+                                True  # Mark as fine from frequency perspective
+                            )
+                        break  # Found a reg_eval for this ds
+
+                if not found_matching_reg_eval:
                     raise ValueError(
                         f"PValEarlyStoppingProbe is configured to monitor DataSource '{monitored_ds.value}', "
                         f"but no 'regression_eval' probe is scheduled to run on this data source. "
                         f"P-value based early stopping requires regression evaluations on all monitored sources."
+                    )
+
+                # Issue warning if early stopping is aggressive but regression eval is not
+                if (
+                    es_schedule.frequency_type == FrequencyType.EPOCH
+                    and es_schedule.frequency_value == 1
+                    and not is_reg_eval_frequent_enough
+                    and found_matching_reg_eval
+                ):
+                    warnings.warn(
+                        f"PValEarlyStoppingProbe is scheduled to check DataSource '{monitored_ds.value}' every epoch, "
+                        f"but the corresponding 'regression_eval' probe for this data source is NOT scheduled every epoch. "
+                        f"This may lead to early stopping decisions based on stale p-values. "
+                        f"Consider aligning the 'regression_eval' probe's frequency_value to 1 for '{monitored_ds.value}' for more reactive early stopping.",
+                        UserWarning,
                     )
         return self
 

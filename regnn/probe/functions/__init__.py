@@ -13,9 +13,6 @@ from .stopping_probes import pval_early_stopping_probe
 # from . import custom_probes # Example for other probe categories
 
 __all__ = [
-    # If core_probes defines public functions/classes you want to re-export from this level,
-    # list them here. For now, just importing ensures registration.
-    # Similarly for checkpoint_probes etc.
     "save_checkpoint_probe",
     "save_intermediate_index_probe",
     "l2_length_probe",

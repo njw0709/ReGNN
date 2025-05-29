@@ -1,6 +1,6 @@
 import torch
 from regnn.model.regnn import ReGNN
-from typing import Optional, Union, Tuple
+from typing import Optional, Union, Tuple, List, Dict, Any
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
@@ -16,6 +16,10 @@ from regnn.train import (
     ElasticNetRegConfig,
 )
 from .base import DataFrameReadInConfig, ModeratedRegressionConfig
+
+# Imports for the new function
+from regnn.probe import ProbeData, ObjectiveProbe, OLSModeratedResultsProbe, L2NormProbe
+from regnn.probe.dataclass.probe_config import DataSource
 
 
 def load_model(
@@ -193,3 +197,122 @@ def generate_stata_command(
         cmd_parts.append(f"[pweight={weight_col}]")
 
     return " ".join(cmd_parts)
+
+
+def format_epoch_printout(
+    base_printout: str, epoch_probe_results: List[ProbeData]
+) -> str:
+    """
+    Formats and appends relevant information from epoch-level probe results to a base printout string.
+
+    Args:
+        base_printout: The initial printout string (e.g., epoch number and training loss).
+        epoch_probe_results: A list of ProbeData objects from the current epoch's probes.
+
+    Returns:
+        An augmented string with information from recognized probes.
+    """
+    additional_info = []
+
+    # Sort by data_source then probe_type for consistent ordering if multiple results exist
+    # This is a simple sort, more complex might be needed if specific order is critical
+    # For now, primarily to group by data_source for display
+    # sorted_results = sorted(epoch_probe_results, key=lambda r: (r.data_source, r.probe_type_name))
+
+    # It might be better to collect specific types of results first, then format them
+    # e.g., all test objectives, then all test p-values
+
+    test_objective_str: Optional[str] = None
+    val_objective_str: Optional[str] = None  # If you have validation data source
+    train_l2_norm_str: Optional[str] = None
+    test_l2_norm_str: Optional[str] = None
+    train_pval_str: Optional[str] = None
+    test_pval_str: Optional[str] = None
+
+    for result in epoch_probe_results:
+        if isinstance(result, ObjectiveProbe):
+            # Assuming objective_name is like "total_loss", "accuracy", etc.
+            # And result.objective is the float value.
+            # And result.data_source is "TRAIN", "TEST", etc.
+            ds_str = result.data_source.upper()
+            obj_name = result.objective_name or "Objective"
+            obj_val_str = (
+                f"{result.objective:.4f}"
+                if isinstance(result.objective, float)
+                else str(result.objective)
+            )
+
+            if ds_str == DataSource.TEST.value:
+                test_objective_str = f"Test {obj_name}: {obj_val_str}"
+            elif ds_str == DataSource.VALIDATION.value:
+                val_objective_str = f"Val {obj_name}: {obj_val_str}"
+            # Train objective is already in base_printout, typically
+
+        elif isinstance(result, OLSModeratedResultsProbe):
+            ds_str = result.data_source.upper()
+            pval_str = (
+                f"{result.interaction_pval:.4f}"
+                if result.interaction_pval is not None
+                else "N/A"
+            )
+            r2_str = f"{result.rsquared:.3f}" if result.rsquared is not None else "N/A"
+
+            current_pval_info = f"{ds_str} PVal: {pval_str} (R2: {r2_str})"
+            if ds_str == DataSource.TRAIN.value:
+                train_pval_str = current_pval_info
+            elif ds_str == DataSource.TEST.value:
+                test_pval_str = current_pval_info
+
+        elif isinstance(result, L2NormProbe):
+            ds_str = (
+                result.data_source.upper()
+            )  # L2NormProbe might not always have a data_source if global
+            # For now, assume it might, or handle if it's None/ALL
+            main_norm_str = (
+                f"{result.main_norm:.4e}"
+                if isinstance(result.main_norm, float)
+                else str(result.main_norm)
+            )
+            index_norm_str = (
+                f"{result.index_norm:.4e}"
+                if isinstance(result.index_norm, float)
+                else str(result.index_norm)
+            )
+            l2_info = f"{ds_str} L2: Main={main_norm_str}, Index={index_norm_str}"
+            if (
+                ds_str == DataSource.TRAIN.value
+            ):  # Or if data_source is None/ALL for a global L2
+                train_l2_norm_str = l2_info
+            elif (
+                ds_str == DataSource.TEST.value
+            ):  # L2 on test data might not be common, but possible if model changes
+                test_l2_norm_str = l2_info
+            elif (
+                result.data_source.upper() == DataSource.ALL.value
+            ):  # Handle global L2 Norm
+                train_l2_norm_str = (
+                    f"Global L2: Main={main_norm_str}, Index={index_norm_str}"
+                )
+
+    # Assemble the printout string in a preferred order
+    if test_objective_str:
+        additional_info.append(test_objective_str)
+    if val_objective_str:
+        additional_info.append(val_objective_str)
+    if train_pval_str:
+        additional_info.append(train_pval_str)
+    if test_pval_str:
+        additional_info.append(test_pval_str)
+    if (
+        train_l2_norm_str and DataSource.ALL.value not in train_l2_norm_str
+    ):  # Avoid double print if global was captured
+        additional_info.append(train_l2_norm_str)
+    elif train_l2_norm_str:  # If it's the global one
+        additional_info.insert(0, train_l2_norm_str)  # Put global L2 first
+
+    if test_l2_norm_str:
+        additional_info.append(test_l2_norm_str)
+
+    if additional_info:
+        return base_printout + " | " + " | ".join(additional_info)
+    return base_printout

@@ -2,10 +2,6 @@ from enum import Enum
 from typing import List, Optional, Dict, Any, Literal, Union
 from pydantic import BaseModel, field_validator, ConfigDict, Field
 
-# Removed: from regnn.eval import FocalPredictorPreProcessOptions
-# This import seems unused in the current context of probe_config.py
-# If it's needed for a specific probe's parameters not defined here, it should be in that probe's config or params.
-
 
 class FrequencyType(str, Enum):
     """Defines how frequently a probe should be run."""
@@ -190,5 +186,5 @@ AllProbeScheduleConfigs = Union[
     GetObjectiveProbeScheduleConfig,
     GetL2LengthProbeScheduleConfig,
     PValEarlyStoppingProbeScheduleConfig,
-    ProbeScheduleConfig,  # Fallback for generic or custom probe types not explicitly listed
+    ProbeScheduleConfig,
 ]

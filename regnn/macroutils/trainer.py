@@ -14,7 +14,7 @@ from regnn.probe.dataclass.base import ProbeData
 from regnn.probe.dataclass.results import EarlyStoppingSignalProbeResult
 
 from .base import MacroConfig
-from .utils import compute_svd, setup_loss_and_optimizer
+from .utils import compute_svd, setup_loss_and_optimizer, format_epoch_printout
 
 
 def train(
@@ -251,9 +251,7 @@ def train(
             if num_batches_epoch > 0
             else float("nan")
         )
-        print(
-            f"Epoch {epoch + 1}/{training_hp.epochs} | Avg Train Batch Loss: {avg_epoch_train_loss:.6f}"
-        )
+        base_printout = f"Epoch {epoch + 1}/{training_hp.epochs} | Avg Train Batch Loss: {avg_epoch_train_loss:.6f}"
 
         # Store avg epoch train loss for objective_probe pre-computation
         # The breakdown here is simplified; a more accurate reg loss would require summing batch_loss_reg
@@ -292,6 +290,10 @@ def train(
                 )
                 break  # Stop checking other probe results for this epoch
         # The loop will break at the start of the next epoch if training_should_continue is False
+
+        # Format and print epoch results including probe data
+        epoch_printout = format_epoch_printout(base_printout, epoch_probes_results)
+        print(epoch_printout)
 
     # --- POST-TRAINING PROBES ---
     # Run regardless of early stopping, but after the loop has finished or been broken
