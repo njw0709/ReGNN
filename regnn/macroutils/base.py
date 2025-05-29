@@ -1,14 +1,17 @@
-from typing import Any, List, Union
+from typing import Any, List, Union, Set
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from regnn.model import ReGNNConfig
 from regnn.train import (
     TrainingHyperParams,
     ProbeOptions,
     KLDLossConfig,
-    PValEarlyStoppingConfig,
 )
 from regnn.data import DataFrameReadInConfig
-from regnn.probe import RegressionEvalProbeScheduleConfig, DataSource
+from regnn.probe import (
+    RegressionEvalProbeScheduleConfig,
+    DataSource,
+    PValEarlyStoppingProbeScheduleConfig,
+)
 
 
 class ModeratedRegressionConfig(BaseModel):
@@ -47,21 +50,16 @@ class MacroConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_kld_loss_compatibility(cls, data: Any) -> Any:
-
-        # Assuming `data` is the MacroConfig instance itself after field validation:
         loss_opts = data.training.loss_options
         model_cfg = data.model
-
         if isinstance(loss_opts, KLDLossConfig):
             if not model_cfg.nn_config.vae:
                 raise ValueError(
-                    "KLDLossConfig is specified, but model.nn_config.vae is False. "
-                    "The model must be a VAE (model.nn_config.vae=True) to use KLD loss."
+                    "KLDLossConfig specified, but model.nn_config.vae is False."
                 )
             if not model_cfg.nn_config.output_mu_var:
                 raise ValueError(
-                    "KLDLossConfig is specified, but model.nn_config.output_mu_var is False. "
-                    "The model must output mu and logvar (model.nn_config.output_mu_var=True) for KLD loss."
+                    "KLDLossConfig specified, but model.nn_config.output_mu_var is False."
                 )
         return data
 
@@ -72,11 +70,8 @@ class MacroConfig(BaseModel):
         - If survey_weights are used, loss reduction must be 'none'.
         - If loss reduction is 'none', survey_weights should ideally be specified.
         """
-        read_cfg = data.read_config  # DataFrameReadInConfig
-        loss_opts = (
-            data.training.loss_options
-        )  # LossConfigs (e.g., MSELossConfig, KLDLossConfig)
-
+        read_cfg = data.read_config
+        loss_opts = data.training.loss_options
         survey_weights_column = read_cfg.survey_weight_col
         loss_reduction = loss_opts.reduction
 
@@ -84,16 +79,13 @@ class MacroConfig(BaseModel):
             # If survey weights are specified, loss reduction MUST be 'none'
             if loss_reduction != "none":
                 raise ValueError(
-                    f"Survey weights column '{survey_weights_column}' is specified in read_config, "
-                    f"but loss reduction in training.loss_options is '{loss_reduction}'. "
-                    f"Loss reduction must be 'none' when using survey weights."
+                    f"Survey weights column '{survey_weights_column}' used, but loss reduction is '{loss_reduction}'. Must be 'none'."
                 )
         else:
             # If survey weights are NOT specified, but loss reduction is 'none'
             if loss_reduction == "none":
                 print(
-                    f"Warning: Loss reduction is 'none' in training.loss_options, but no survey_weight_col "
-                    f"is specified in read_config. Ensure this is intended if not using survey weights."
+                    "Warning: Loss reduction is 'none', but no survey_weight_col specified. Ensure intended."
                 )
         return data
 
@@ -131,45 +123,33 @@ class MacroConfig(BaseModel):
     @model_validator(mode="after")
     def validate_early_stopping_probes(self) -> "MacroConfig":
         """
-        If PValEarlyStoppingConfig is enabled, validates that:
-        1. RegressionEvalProbeScheduleConfig is scheduled for DataSource.TRAIN.
-        2. RegressionEvalProbeScheduleConfig is scheduled for DataSource.TEST.
-        These are needed to get p-values for early stopping.
+        If a PValEarlyStoppingProbeScheduleConfig is present, validates that for each of its
+        monitored data sources, a corresponding RegressionEvalProbeScheduleConfig is also scheduled.
         """
-        if not (
-            isinstance(self.training.stopping_options, PValEarlyStoppingConfig)
-            and self.training.stopping_options.enabled
-        ):
-            return self  # Early stopping not enabled or not PVal type
+        early_stopping_schedules = [
+            s
+            for s in self.probe.schedules
+            if isinstance(s, PValEarlyStoppingProbeScheduleConfig)
+        ]
 
-        has_train_pval_probe = False
-        has_test_pval_probe = False
+        if not early_stopping_schedules:
+            return self  # No p-value early stopping probe scheduled, nothing to validate here.
 
-        for schedule in self.probe.schedules:
-            if isinstance(schedule, RegressionEvalProbeScheduleConfig):
-                # Check if it runs on TRAIN data
-                if DataSource.TRAIN in schedule.data_sources:
-                    has_train_pval_probe = True
+        # Get all data sources for which RegressionEvalProbes are scheduled
+        regression_eval_covered_sources: Set[DataSource] = set()
+        for sched in self.probe.schedules:
+            if isinstance(sched, RegressionEvalProbeScheduleConfig):
+                for ds in sched.data_sources:
+                    regression_eval_covered_sources.add(ds)
 
-                # Check if it runs on TEST data
-                if DataSource.TEST in schedule.data_sources:
-                    has_test_pval_probe = True
-
-            if has_train_pval_probe and has_test_pval_probe:
-                break  # Both found
-
-        if not has_train_pval_probe:
-            raise ValueError(
-                "PValEarlyStoppingConfig is enabled, but no 'regression_eval' probe is scheduled "
-                "to run on DataSource.TRAIN. This is required for p-value based early stopping."
-            )
-
-        if not has_test_pval_probe:
-            raise ValueError(
-                "PValEarlyStoppingConfig is enabled, but no 'regression_eval' probe is scheduled "
-                "to run on DataSource.TEST. This is required for p-value based early stopping."
-            )
-
+        for es_schedule in early_stopping_schedules:
+            for monitored_ds in es_schedule.data_sources_to_monitor:
+                if monitored_ds not in regression_eval_covered_sources:
+                    raise ValueError(
+                        f"PValEarlyStoppingProbe is configured to monitor DataSource '{monitored_ds.value}', "
+                        f"but no 'regression_eval' probe is scheduled to run on this data source. "
+                        f"P-value based early stopping requires regression evaluations on all monitored sources."
+                    )
         return self
 
     @model_validator(mode="after")
@@ -183,11 +163,15 @@ class MacroConfig(BaseModel):
 
         for schedule in self.probe.schedules:
             if isinstance(schedule, RegressionEvalProbeScheduleConfig):
-                if schedule.index_column_name != main_regression_index:
+                if isinstance(main_regression_index, list):
+                    # This case needs clarification: if main index can be a list, how does it map to a single probe index_column_name?
+                    # For now, if main is list, we might skip this check or require probe index to be in the list.
+                    # Or, perhaps RegressionEvalProbeScheduleConfig.index_column_name should also be able to be a list?
+                    # Current logic implies both are str.
+                    pass
+                elif schedule.index_column_name != main_regression_index:
                     raise ValueError(
-                        f"Inconsistent index_column_name for a 'regression_eval' probe: "
-                        f"Probe schedule uses '{schedule.index_column_name}', but "
-                        f"main regression config uses '{main_regression_index}'. "
-                        f"These must match for 'regression_eval' probes."
+                        f"Inconsistent index_column_name for 'regression_eval' probe: "
+                        f"Uses '{schedule.index_column_name}', main is '{main_regression_index}'. Must match."
                     )
         return self

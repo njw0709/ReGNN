@@ -11,28 +11,8 @@ from regnn.probe import (
     SaveIntermediateIndexProbeScheduleConfig,
     GetObjectiveProbeScheduleConfig,
     GetL2LengthProbeScheduleConfig,
+    PValEarlyStoppingProbeScheduleConfig,
 )
-
-
-class PValEarlyStoppingConfig(BaseModel):
-    """Early stopping configuration"""
-
-    model_config = ConfigDict(arbitrary_types_allowed=False)
-
-    enabled: bool = Field(True, description="Whether to use early stopping")
-    criterion: float = Field(
-        0.01,
-        gt=0.0,
-        description="If both training and testing p-values reach below this threshold, stop training",
-    )
-    patience: int = Field(
-        30, gt=0, description="Number of epochs after which to stop if no improvement"
-    )
-    n_sequential_epochs_to_pass: int = Field(
-        1,
-        ge=1,
-        description="If N sequential epochs that pass the criterion, then stop.",
-    )
 
 
 class RegularizationConfig(BaseModel):
@@ -138,11 +118,6 @@ class TrainingHyperParams(BaseModel):
         description="seed to use for shuffling indices to use for splitting train and test set",
     )
 
-    stopping_options: Optional[PValEarlyStoppingConfig] = Field(
-        default=None,
-        description="Optional early stopping configuration. If None, early stopping will be disabled.",
-    )
-
     loss_options: LossConfigs = Field(
         default_factory=LossConfigs,
         description="Configuration for loss function and regularization",
@@ -161,11 +136,12 @@ class ProbeOptions(BaseModel):
             SaveIntermediateIndexProbeScheduleConfig,
             GetObjectiveProbeScheduleConfig,
             GetL2LengthProbeScheduleConfig,
+            PValEarlyStoppingProbeScheduleConfig,
             ProbeScheduleConfig,
         ]
     ] = Field(
         default_factory=list,
-        description="List of probe schedules to run during training and evaluation",
+        description="List of probe schedules to run. For p-value early stopping, add PValEarlyStoppingProbeScheduleConfig.",
     )
 
     return_trajectory: bool = Field(

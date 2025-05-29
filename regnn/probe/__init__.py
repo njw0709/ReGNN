@@ -17,6 +17,7 @@ from .dataclass import (
     SaveCheckpointProbeScheduleConfig,
     GetObjectiveProbeScheduleConfig,
     GetL2LengthProbeScheduleConfig,
+    PValEarlyStoppingProbeScheduleConfig,
 )
 from .registry import PROBE_REGISTRY, register_probe
 
@@ -41,6 +42,7 @@ __all__ = [
     "SaveIntermediateIndexProbeScheduleConfig",
     "GetObjectiveProbeScheduleConfig",
     "GetL2LengthProbeScheduleConfig",
+    "PValEarlyStoppingProbeScheduleConfig",
     # registry exports
     "PROBE_REGISTRY",
     "register_probe",

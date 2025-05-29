@@ -16,6 +16,7 @@ from .probe_config import (
     SaveIntermediateIndexProbeScheduleConfig,
     GetObjectiveProbeScheduleConfig,
     GetL2LengthProbeScheduleConfig,
+    PValEarlyStoppingProbeScheduleConfig,
 )
 
 # Import new result types
@@ -43,4 +44,5 @@ __all__ = [
     "SaveIntermediateIndexProbeScheduleConfig",
     "GetObjectiveProbeScheduleConfig",
     "GetL2LengthProbeScheduleConfig",
+    "PValEarlyStoppingProbeScheduleConfig",
 ]
