@@ -3,7 +3,6 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 from regnn.model import ReGNNConfig
 from regnn.train import (
     TrainingHyperParams,
-    ProbeOptions,
     KLDLossConfig,
 )
 from regnn.data import DataFrameReadInConfig
@@ -12,6 +11,7 @@ from regnn.probe import (
     DataSource,
     PValEarlyStoppingProbeScheduleConfig,
     FrequencyType,
+    ProbeOptions,
 )
 import warnings
 

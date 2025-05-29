@@ -480,7 +480,7 @@ class ReGNN(nn.Module):
         self,
         moderators,
         focal_predictor,
-        controlled_vars,
+        controlled_predictors,
         y: Union[None, torch.tensor] = None,
         s_weights: Union[None, torch.tensor] = None,
     ):
@@ -498,7 +498,7 @@ class ReGNN(nn.Module):
 
         # get linear term variables
         all_linear_vars = self._get_linear_term_variables(
-            moderators, focal_predictor, controlled_vars
+            moderators, focal_predictor, controlled_predictors
         )  # Shape: (batch_size, 1, n_linear_terms)
 
         # compute index prediction

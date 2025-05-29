@@ -1,5 +1,6 @@
 from .dataclass import (
     ProbeData,
+    ProbeOptions,
     Snapshot,
     Trajectory,
     ObjectiveProbe,
@@ -21,9 +22,13 @@ from .dataclass import (
 )
 from .registry import PROBE_REGISTRY, register_probe
 
+# Import functions to ensure registration
+from . import functions  # This will execute functions/__init__.py
+
 __all__ = [
     # dataclass exports - ProbeData and specific result types
     "ProbeData",
+    "ProbeOptions",
     "Snapshot",
     "Trajectory",
     "ObjectiveProbe",
@@ -46,4 +51,6 @@ __all__ = [
     # registry exports
     "PROBE_REGISTRY",
     "register_probe",
+    # functions module (optional to export, but importing it is key for registration)
+    # "functions",
 ]

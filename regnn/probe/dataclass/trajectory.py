@@ -1,6 +1,6 @@
-from typing import List, Literal, Union, Dict, Type, Tuple, Optional, Any
+from typing import List, Union, Type, Optional
 from pydantic import BaseModel, Field, ConfigDict, computed_field, SerializeAsAny
-from regnn.probe.dataclass.probe_config import FrequencyType
+from .probe_config import FrequencyType
 from .base import ProbeData
 
 

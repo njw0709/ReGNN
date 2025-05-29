@@ -159,8 +159,7 @@ def train(
             # So, input_tensors should contain these keys.
             model_input_kwargs = {
                 k: batch_data[k]
-                for k in ["moderators", "focal_predictor", "controlled_vars"]
-                if k in batch_data
+                for k in ["moderators", "focal_predictor", "controlled_predictors"]
             }
             targets = batch_data["outcome"]
             s_weights = batch_data.get("weights")

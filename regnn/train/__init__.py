@@ -1,5 +1,4 @@
 from .base import (
-    ProbeOptions,
     LossConfigs,
     ElasticNetRegConfig,
     WeightDecayConfig,
@@ -12,7 +11,6 @@ from .base import (
 
 __all__ = [
     # Configuration classes
-    "ProbeOptions",
     "LossConfigs",
     "TrainingHyperParams",
     "WeightDecayConfig",

@@ -1,18 +1,6 @@
-from typing import Optional, Literal, List, Union
+from typing import Optional, Literal
 from pydantic import BaseModel, Field, ConfigDict
 import torch
-from regnn.constants import TEMP_DIR
-
-# Import new schedule configs
-from regnn.probe import (
-    ProbeScheduleConfig,
-    RegressionEvalProbeScheduleConfig,
-    SaveCheckpointProbeScheduleConfig,
-    SaveIntermediateIndexProbeScheduleConfig,
-    GetObjectiveProbeScheduleConfig,
-    GetL2LengthProbeScheduleConfig,
-    PValEarlyStoppingProbeScheduleConfig,
-)
 
 
 class RegularizationConfig(BaseModel):
@@ -121,29 +109,4 @@ class TrainingHyperParams(BaseModel):
     loss_options: LossConfigs = Field(
         default_factory=LossConfigs,
         description="Configuration for loss function and regularization",
-    )
-
-
-class ProbeOptions(BaseModel):
-    """Configuration for output and saving behavior"""
-
-    model_config = ConfigDict(arbitrary_types_allowed=False)
-
-    schedules: List[
-        Union[
-            RegressionEvalProbeScheduleConfig,
-            SaveCheckpointProbeScheduleConfig,
-            SaveIntermediateIndexProbeScheduleConfig,
-            GetObjectiveProbeScheduleConfig,
-            GetL2LengthProbeScheduleConfig,
-            PValEarlyStoppingProbeScheduleConfig,
-            ProbeScheduleConfig,
-        ]
-    ] = Field(
-        default_factory=list,
-        description="List of probe schedules to run. For p-value early stopping, add PValEarlyStoppingProbeScheduleConfig.",
-    )
-
-    return_trajectory: bool = Field(
-        False, description="Whether to return training trajectory"
     )

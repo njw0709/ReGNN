@@ -1,4 +1,4 @@
-from .base import ProbeData
+from .base import ProbeData, ProbeOptions
 from .trajectory import Snapshot, Trajectory
 from .nn import ObjectiveProbe
 from .regression import (
@@ -27,6 +27,7 @@ from .results import (
 
 __all__ = [
     "ProbeData",
+    "ProbeOptions",
     "Snapshot",
     "Trajectory",
     "ObjectiveProbe",

@@ -9,7 +9,6 @@ from regnn.data import DataFrameReadInConfig
 from regnn.model import ReGNNConfig, SVDConfig
 from regnn.train import (
     TrainingHyperParams,
-    ProbeOptions,
     MSELossConfig,
     WeightDecayConfig,
     OptimizerConfig,
@@ -18,7 +17,6 @@ from regnn.train import (
 from regnn.macroutils import preprocess  # For data loading and preprocessing
 from regnn.probe import Trajectory
 
-# Import new Probe Schedule Configs and Enums
 from regnn.probe import (
     SaveCheckpointProbeScheduleConfig,
     SaveIntermediateIndexProbeScheduleConfig,
@@ -27,6 +25,7 @@ from regnn.probe import (
     PValEarlyStoppingProbeScheduleConfig,
     FrequencyType,
     DataSource,
+    ProbeOptions,
 )
 
 
