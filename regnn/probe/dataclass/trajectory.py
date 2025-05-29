@@ -1,72 +1,39 @@
 from typing import List, Literal, Union, Dict, Type, Tuple, Optional, Any
 from pydantic import BaseModel, Field, ConfigDict, computed_field, SerializeAsAny
+from regnn.probe.dataclass.probe_config import FrequencyType
 from .base import ProbeData
-from .nn import ObjectiveProbe
-from .regression import (
-    OLSResultsProbe,
-    OLSModeratedResultsProbe,
-    VarianceInflationFactorProbe,
-    L2NormProbe,
-)
 
 
 class Snapshot(BaseModel):
-    """Snapshot of all probes at certain moment in time."""
+    """Snapshot of all probes at a specific point in the training lifecycle."""
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
+        use_enum_values=True,
         from_attributes=True,
     )
 
-    time: Union[int, float, Dict[str, float]] = Field(
-        default=-1,
-        description="When the measurement was made. Can be epoch, iterations, or dictionary of both.",
+    epoch: int = Field(
+        ...,
+        description="Epoch number for this snapshot. -1 for pre-training, training_hp.epochs for post-training.",
     )
-    measurements: List[
-        SerializeAsAny[
-            Union[
-                ObjectiveProbe,
-                OLSModeratedResultsProbe,
-                OLSResultsProbe,
-                VarianceInflationFactorProbe,
-                L2NormProbe,
-            ]
-        ]
-    ] = Field(default_factory=list)
+    iteration_in_epoch: Optional[int] = Field(
+        None,
+        description="Iteration number within the epoch (None if not applicable, e.g., for EPOCH frequency). Batch index.",
+    )
+    global_iteration: Optional[int] = Field(
+        None,
+        description="Global iteration count (None if not applicable, e.g., for PRE_TRAINING or EPOCH with no prior iterations).",
+    )
+    frequency_context: FrequencyType = Field(
+        ...,
+        description="The frequency context under which these probes were run (e.g., PRE_TRAINING, EPOCH).",
+    )
 
-    # @classmethod
-    # def model_validate_json(
-    #     cls, json_data: Union[str, bytes, bytearray, Dict], **kwargs
-    # ):
-    #     """Override to handle polymorphic deserialization of ProbeData in measurements."""
-    #     data_dict: Dict[str, Any]
-    #     if isinstance(json_data, dict):
-    #         data_dict = json_data
-    #     elif isinstance(json_data, (str, bytes, bytearray)):
-    #         import json
-
-    #         data_dict = json.loads(
-    #             json_data.decode()
-    #             if isinstance(json_data, (bytes, bytearray))
-    #             else json_data
-    #         )
-    #     else:
-    #         raise TypeError(
-    #             f"Expected str, bytes, bytearray or dict for json_data, got {type(json_data)}"
-    #         )
-
-    #     if "measurements" in data_dict and isinstance(data_dict["measurements"], list):
-    #         processed_measurements = []
-    #         for measurement_data in data_dict["measurements"]:
-    #             # measurement_data should be a dict here after json.loads if json_data was a string
-    #             # or directly if json_data was a pre-parsed dict.
-    #             # Pass it to ProbeData.model_validate_json which expects a dict or json string.
-    #             processed_measurements.append(
-    #                 ProbeData.model_validate_json(measurement_data, **kwargs)
-    #             )
-    #         data_dict["measurements"] = processed_measurements
-
-    #     return cls.model_validate(data_dict, **kwargs)
+    measurements: List[SerializeAsAny[ProbeData]] = Field(
+        default_factory=list,
+        description="List of ProbeData results collected during this snapshot.",
+    )
 
     def get(self, probe_type: Type[ProbeData]) -> Optional[ProbeData]:
         """
@@ -81,6 +48,11 @@ class Snapshot(BaseModel):
             >>> if objective_data:
             >>>     print(f"Loss: {objective_data.loss}")
         """
+        if not (isinstance(probe_type, type) and issubclass(probe_type, ProbeData)):
+            raise TypeError(
+                f"probe_type must be a subclass of ProbeData, got {probe_type}"
+            )
+
         return next((m for m in self.measurements if isinstance(m, probe_type)), None)
 
     def get_all(self, probe_type: Type[ProbeData]) -> List[ProbeData]:
@@ -96,6 +68,11 @@ class Snapshot(BaseModel):
             >>> for obj in all_objectives:
             >>>     print(f"Loss: {obj.loss}")
         """
+        if not (isinstance(probe_type, type) and issubclass(probe_type, ProbeData)):
+            raise TypeError(
+                f"probe_type must be a subclass of ProbeData, got {probe_type}"
+            )
+
         return [m for m in self.measurements if isinstance(m, probe_type)]
 
     def add(self, measurement: ProbeData) -> None:
@@ -104,10 +81,14 @@ class Snapshot(BaseModel):
         Args:
             measurement: The probe data instance to add to measurements
         Example:
-            >>> snapshot = Snapshot(time=1)
+            >>> snapshot = Snapshot(epoch=0, frequency_context=FrequencyType.EPOCH)
             >>> probe_data = ObjectiveProbe(loss=0.5, data_source="train")
             >>> snapshot.add(probe_data)
         """
+        if not isinstance(measurement, ProbeData):
+            raise TypeError(
+                f"measurement must be an instance of ProbeData, got {type(measurement)}"
+            )
         self.measurements.append(measurement)
 
 
@@ -120,44 +101,13 @@ class Trajectory(BaseModel):
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
+        use_enum_values=True,
         from_attributes=True,
     )
 
     data: List[Snapshot] = Field(
-        default_factory=list, description="List of all measurements made along time."
+        default_factory=list, description="List of all snapshots made along time."
     )
-
-    # @classmethod
-    # def model_validate_json(
-    #     cls, json_data: Union[str, bytes, bytearray, Dict], **kwargs
-    # ):
-    #     """Override to handle polymorphic deserialization of Snapshots in data."""
-    #     data_dict: Dict[str, Any]
-    #     if isinstance(json_data, dict):
-    #         data_dict = json_data
-    #     elif isinstance(json_data, (str, bytes, bytearray)):
-    #         import json
-
-    #         data_dict = json.loads(
-    #             json_data.decode()
-    #             if isinstance(json_data, (bytes, bytearray))
-    #             else json_data
-    #         )
-    #     else:
-    #         raise TypeError(
-    #             f"Expected str, bytes, bytearray or dict for json_data, got {type(json_data)}"
-    #         )
-
-    #     if "data" in data_dict and isinstance(data_dict["data"], list):
-    #         processed_data = []
-    #         for snapshot_data in data_dict["data"]:
-    #             # Pass to Snapshot.model_validate_json
-    #             processed_data.append(
-    #                 Snapshot.model_validate_json(snapshot_data, **kwargs)
-    #             )
-    #         data_dict["data"] = processed_data
-
-    #     return cls.model_validate(data_dict, **kwargs)
 
     def __getitem__(self, idx: Union[int, slice]) -> Union[Snapshot, "Trajectory"]:
         """
@@ -178,34 +128,19 @@ class Trajectory(BaseModel):
 
     @computed_field
     @property
-    def times(self) -> List[Union[int, float, Dict[str, float]]]:
-        """Returns a list of times from all snapshots in chronological order."""
-        return [snapshot.time for snapshot in self.data]
+    def epochs(self) -> List[int]:
+        """Returns a list of epoch numbers from all snapshots."""
+        return [snapshot.epoch for snapshot in self.data]
 
-    def at(
-        self,
-        time: Union[int, float, Dict[str, float]],
-        tolerance: float = 1e-10,
-    ) -> Union[Snapshot, List[Snapshot], None]:
-        """Get snapshot(s) at a specific time point."""
-        matches = []
-        for snapshot in self.data:
-            if isinstance(time, (int, float)) and isinstance(
-                snapshot.time, (int, float)
-            ):
-                if abs(snapshot.time - time) <= tolerance:
-                    matches.append(snapshot)
-            elif isinstance(time, dict) and isinstance(snapshot.time, dict):
-                if all(
-                    k in snapshot.time and abs(snapshot.time[k] - v) <= tolerance
-                    for k, v in time.items()
-                ):
-                    matches.append(snapshot)
-        if not matches:
-            return None
-        elif len(matches) == 1:
-            return matches[0]
-        return matches
+    def get_snapshots_for_epoch(self, epoch: int) -> List[Snapshot]:
+        """Get all snapshots recorded for a specific epoch."""
+        return [s for s in self.data if s.epoch == epoch]
+
+    def get_snapshots_by_frequency(
+        self, frequency_context: FrequencyType
+    ) -> List[Snapshot]:
+        """Get all snapshots recorded for a specific frequency context."""
+        return [s for s in self.data if s.frequency_context == frequency_context]
 
     def extend(self, other: "Trajectory") -> None:
         """Extend this trajectory with snapshots from another trajectory."""
@@ -213,41 +148,26 @@ class Trajectory(BaseModel):
             raise TypeError(f"Expected Trajectory, got {type(other)}")
         self.data.extend(other.data)
 
-    def append(
-        self,
-        snapshots: Union[Snapshot, List[Snapshot], Tuple[Snapshot, List[Snapshot]]],
-    ) -> None:
-        """Append one or more snapshots to the trajectory."""
-        if isinstance(snapshots, (list, tuple)):
-            if (
-                isinstance(snapshots, tuple)
-                and len(snapshots) == 2
-                and isinstance(snapshots[0], Snapshot)
-                and isinstance(snapshots[1], list)
-            ):
-                epoch_snapshot, batch_snapshots = snapshots
-                self.data.extend(batch_snapshots)
-                self.data.append(epoch_snapshot)
-            else:
-                self.data.extend(snapshots)
-        elif isinstance(snapshots, Snapshot):
-            self.data.append(snapshots)
-        else:
-            raise TypeError(
-                f"Expected Snapshot, List[Snapshot], or Tuple[Snapshot, List[Snapshot]], got {type(snapshots)}"
-            )
+    def append(self, snapshot: Snapshot) -> None:
+        """Append one snapshot to the trajectory."""
+        if not isinstance(snapshot, Snapshot):
+            raise TypeError(f"Expected Snapshot, got {type(snapshot)}")
+        self.data.append(snapshot)
 
     def select(self, probe_type: Type[ProbeData]) -> "Trajectory":
-        """Creates a new Trajectory instance containing only measurements of the specified probe type."""
+        """Creates a new Trajectory instance containing only measurements of the specified probe type from all snapshots."""
         filtered_snapshots = []
         for snapshot in self.data:
-            filtered_measurements = [
-                m for m in snapshot.measurements if isinstance(m, probe_type)
-            ]
+            filtered_measurements = snapshot.get_all(probe_type)
             if filtered_measurements:
-                filtered_snapshots.append(
-                    Snapshot(time=snapshot.time, measurements=filtered_measurements)
+                new_snapshot = Snapshot(
+                    epoch=snapshot.epoch,
+                    iteration_in_epoch=snapshot.iteration_in_epoch,
+                    global_iteration=snapshot.global_iteration,
+                    frequency_context=snapshot.frequency_context,
+                    measurements=filtered_measurements,
                 )
+                filtered_snapshots.append(new_snapshot)
         return Trajectory(data=filtered_snapshots)
 
     def group_by(self) -> List["Trajectory"]:

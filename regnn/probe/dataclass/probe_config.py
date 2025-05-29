@@ -1,54 +1,60 @@
 from enum import Enum
-from typing import List, Optional, Dict, Any, Literal
+from typing import List, Optional, Dict, Any, Literal, Union
 from pydantic import BaseModel, field_validator, ConfigDict, Field
 
-from regnn.eval import FocalPredictorPreProcessOptions
-
-# Forward declaration for ProbeData if it's defined elsewhere and causes circular imports
-# For now, we assume ProbeData will be a base class or a well-defined type.
-# from regnn.probe import ProbeData # This might be needed later
+# Removed: from regnn.eval import FocalPredictorPreProcessOptions
+# This import seems unused in the current context of probe_config.py
+# If it's needed for a specific probe's parameters not defined here, it should be in that probe's config or params.
 
 
 class FrequencyType(str, Enum):
     """Defines how frequently a probe should be run."""
 
-    PRE_TRAINING = "pre_training"  # Once before the training loop starts
-    POST_TRAINING = "post_training"  # Once after the training loop finishes
-    EPOCH = "epoch"  # At the end of specified epochs
-    ITERATION = "iteration"  # After specified iterations (batches)
+    PRE_TRAINING = "PRE_TRAINING"
+    POST_TRAINING = "POST_TRAINING"
+    EPOCH = "EPOCH"
+    ITERATION = "ITERATION"
 
 
 class DataSource(str, Enum):
     """Specifies the data source a probe should operate on."""
 
-    TRAIN = "train"
-    TEST = "test"
-    VALIDATION = "validation"  # If a dedicated validation set is used
-    ALL = "all"  # For probes that operate on the model globally or combined data
+    TRAIN = "TRAIN"
+    TEST = "TEST"
+    VALIDATION = "VALIDATION"
+    ALL = "ALL"
 
 
 class ProbeScheduleConfig(BaseModel):
-    """Configuration for scheduling a specific probe."""
-
-    model_config = ConfigDict(use_enum_values=True, extra="forbid")
-
-    probe_type: str  # String identifier for the probe (e.g., "save_model", "l2_norm")
-    frequency_type: FrequencyType
-    frequency_value: int = (
-        1  # e.g., every 1 epoch, every 10 iterations. For PRE/POST, this is ignored.
+    model_config = ConfigDict(
+        use_enum_values=True, arbitrary_types_allowed=True, extra="allow"
     )
-    data_sources: List[DataSource] = [
-        DataSource.TRAIN
-    ]  # Default to train if not specified
-    probe_params: Optional[Dict[str, Any]] = (
-        None  # Specific parameters for this probe instance
+
+    probe_type: str = Field(
+        ..., description="Identifier for the probe function in the registry."
+    )
+    frequency_type: FrequencyType = Field(
+        ..., description="When the probe should run (e.g., EPOCH, ITERATION)."
+    )
+    frequency_value: int = Field(
+        1,
+        description="Frequency for EPOCH/ITERATION (e.g., run every N epochs/iterations).",
+    )
+    data_sources: List[DataSource] = Field(
+        default_factory=lambda: [DataSource.ALL],
+        description="Data sources to run the probe on.",
+    )
+    probe_params: Optional[Dict[str, Any]] = Field(
+        default_factory=dict, description="Specific parameters for the probe function."
     )
 
     @field_validator("frequency_value")
     def check_frequency_value(cls, v, info):
         # Pydantic v2: info is an instance of ValidationInfo
         # Access field values via info.data, which is a dict of the model's fields
-        if info.data.get("frequency_type") in [
+        # The .value attribute is not needed for standard enums when use_enum_values=True
+        frequency_type_val = info.data.get("frequency_type")
+        if frequency_type_val in [
             FrequencyType.EPOCH,
             FrequencyType.ITERATION,
         ]:
@@ -59,122 +65,130 @@ class ProbeScheduleConfig(BaseModel):
         return v
 
     @field_validator("data_sources", mode="before")
-    def ensure_data_sources_is_list(cls, v):
+    def ensure_data_sources_is_list_and_enum(cls, v):
         if isinstance(v, (str, DataSource)):
-            return [v]
-        if not v:  # Handle None or empty by defaulting
+            raw_values = [v.value if isinstance(v, DataSource) else v]
+        elif isinstance(v, list):
+            raw_values = [
+                item.value if isinstance(item, DataSource) else item for item in v
+            ]
+        else:
+            # Default if input is not understandable, or raise error
             return [DataSource.TRAIN]
-        return v
+
+        processed_sources = []
+        for val in raw_values:
+            try:
+                processed_sources.append(DataSource(val))
+            except ValueError:
+                # Handle cases where the string value might not be a valid DataSource member
+                # Depending on strictness, could raise an error or log a warning
+                # For now, let's be strict and raise an error or filter out invalid ones
+                raise ValueError(f"Invalid DataSource string: {val}")
+
+        if (
+            not processed_sources
+        ):  # if all were invalid or initial list was empty in a way
+            return [DataSource.TRAIN]  # Fallback default
+        return processed_sources
 
 
 class RegressionEvalProbeScheduleConfig(ProbeScheduleConfig):
-    """Configuration for a regression evaluation probe."""
-
-    model_config = ConfigDict(
-        use_enum_values=True, extra="forbid", populate_by_name=True
-    )
-
     probe_type: Literal["regression_eval"] = "regression_eval"
-
-    # Fields from former RegressionEvalOptions
-    regress_cmd: str = Field(
-        ...,
-        description="Regression command to run, e.g., 'dep_var ~ indep_var1 + indep_var2'",
+    regress_cmd: Optional[str] = Field(
+        None,
+        description="Full Stata regression command. If None, it will be generated.",
     )
     evaluation_function: Literal["stata", "statsmodels"] = Field(
-        "statsmodels", description="Evaluation engine to use"
-    )
-    focal_predictor_process_options: FocalPredictorPreProcessOptions = Field(
-        default_factory=FocalPredictorPreProcessOptions,
-        description="Options for preprocessing the focal predictor before evaluation",
+        "stata", description="Statistical package to use."
     )
     index_column_name: str = Field(
-        "summary_index",
-        description="Name of the index column if used in regression or for identification",
+        "regnn_index",
+        description="Column name for the generated ReGNN index in the DataFrame for evaluation.",
     )
-    # 'evaluate' and 'eval_epochs' are covered by ProbeScheduleConfig's frequency_type/value
-    # 'post_training_eval' is covered by setting frequency_type = FrequencyType.POST_TRAINING
+    # Replaced Dict with a more specific placeholder if FocalPredictorPreProcessOptions is intended.
+    # For now, keeping as Dict[str, Any] to avoid circular dependency or missing import.
+    focal_predictor_process_options: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Options for processing the focal predictor (e.g. thresholding). Corresponds to FocalPredictorPreProcessOptions model.",
+    )
 
-    @field_validator("regress_cmd")
-    def validate_regress_cmd(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("regress_cmd cannot be empty")
-        # Basic check, can be enhanced
-        if (
-            "~" not in v and len(v.split()) < 3
-        ):  # Support for patsy formula or space separated
-            raise ValueError(
-                "regress_cmd should be a valid regression formula (e.g., 'y ~ x1 + x2') or "
-                "a command with at least 3 parts: command, dependent var, and independent var for older formats."
-            )
-        return v
+    # Removed validator for regress_cmd as it was too basic and might be better handled by the probe itself.
+    # If specific validation is needed, it can be reinstated with more robust checks.
 
 
 class SaveCheckpointProbeScheduleConfig(ProbeScheduleConfig):
-    """Configuration for saving model checkpoints."""
-
-    model_config = ConfigDict(
-        use_enum_values=True, extra="forbid", populate_by_name=True
-    )
-
     probe_type: Literal["save_checkpoint"] = "save_checkpoint"
-
-    save_dir: str = Field(..., description="Directory to save model checkpoints.")
+    save_dir: str = Field(
+        "checkpoints", description="Directory to save model checkpoints."
+    )
     model_save_name: str = Field(
-        "regnn_model", description="Base name for saved model files."
+        "model", description="Base name for the saved model files."
     )
     file_id: Optional[str] = Field(
-        None, description="Optional suffix for filenames, e.g., an experiment ID."
+        None, description="Optional ID to append to filenames."
     )
-    # epoch_in_filename: bool = Field(True, description="Whether to include epoch number in the filename.")
 
 
 class SaveIntermediateIndexProbeScheduleConfig(ProbeScheduleConfig):
-    """Configuration for saving intermediate index predictions."""
-
-    model_config = ConfigDict(
-        use_enum_values=True, extra="forbid", populate_by_name=True
-    )
-
     probe_type: Literal["save_intermediate_index"] = "save_intermediate_index"
-
     save_dir: str = Field(
-        ..., description="Directory to save intermediate index files."
+        "intermediate_indices",
+        description="Directory to save intermediate index files.",
     )
     model_save_name: str = Field(
-        "regnn_model",
-        description="Base name used for constructing the index filename, usually matching model checkpoints.",
+        "model", description="Base name for the output files (used as prefix)."
     )
     file_id: Optional[str] = Field(
-        None,
-        description="Optional suffix for filenames, often an experiment ID to make filenames unique like '{model_save_name}-{file_id}-indices.dta'.",
+        None, description="Optional ID to append to filenames."
     )
 
 
 class GetObjectiveProbeScheduleConfig(ProbeScheduleConfig):
-    """
-    Configuration for a probe that calculates accuracy or other relevant metrics.
-    The actual metric calculated would depend on the probe's implementation.
-    """
-
-    model_config = ConfigDict(
-        use_enum_values=True, extra="forbid", populate_by_name=True
-    )
-
     probe_type: Literal["objective"] = "objective"
-    # Example parameters:
-    # metric_name: str = Field("accuracy", description="Name of the primary metric to compute.")
-    # additional_metrics: List[str] = Field(default_factory=list, description="Other metrics to compute.")
 
 
 class GetL2LengthProbeScheduleConfig(ProbeScheduleConfig):
-    """Configuration for calculating L2 norm of model parameters."""
+    probe_type: Literal["l2_length"] = "l2_length"
 
-    model_config = ConfigDict(
-        use_enum_values=True, extra="forbid", populate_by_name=True
+
+class PValEarlyStoppingProbeScheduleConfig(ProbeScheduleConfig):
+    probe_type: Literal["pval_early_stopping"] = "pval_early_stopping"
+    frequency_type: FrequencyType = Field(
+        default=FrequencyType.EPOCH,  # Use default instead of default_factory for direct enum assignment
+        description="Typically runs at EPOCH frequency.",
     )
 
-    probe_type: Literal["l2_length"] = "l2_length"
-    # This probe typically doesn't need extra parameters beyond frequency and data_sources (usually ALL or none).
-    # It operates directly on the model.
-    # Ensure data_sources defaults appropriately or is set for this type if needed (e.g., often [DataSource.ALL])
+    criterion: float = Field(
+        0.05,
+        ge=0,
+        le=1,
+        description="P-value threshold for stopping (e.g., if p-value < criterion).",
+    )
+    patience: int = Field(
+        0,
+        ge=0,
+        description="Number of initial epochs to ignore before checking criterion.",
+    )
+    n_sequential_epochs_to_pass: int = Field(
+        1,
+        ge=1,
+        description="Number of consecutive relevant evaluations the criterion must be met.",
+    )
+
+    data_sources_to_monitor: List[DataSource] = Field(
+        default_factory=lambda: [DataSource.TRAIN, DataSource.TEST],
+        description="Data sources (e.g., TRAIN, TEST) whose p-values to monitor from RegressionEvalProbe results.",
+    )
+
+
+# Union type for all specific probe schedule configurations
+AllProbeScheduleConfigs = Union[
+    RegressionEvalProbeScheduleConfig,
+    SaveCheckpointProbeScheduleConfig,
+    SaveIntermediateIndexProbeScheduleConfig,
+    GetObjectiveProbeScheduleConfig,
+    GetL2LengthProbeScheduleConfig,
+    PValEarlyStoppingProbeScheduleConfig,
+    ProbeScheduleConfig,  # Fallback for generic or custom probe types not explicitly listed
+]

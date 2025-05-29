@@ -1,8 +1,6 @@
 import torch
 from regnn.model.regnn import ReGNN
 from typing import Optional, Union, Tuple
-import os
-from regnn.constants import TEMP_DIR
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
