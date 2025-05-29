@@ -76,6 +76,7 @@ class MacroConfig(BaseModel):
         loss_opts = data.training.loss_options
         survey_weights_column = read_cfg.survey_weight_col
         loss_reduction = loss_opts.reduction
+        print(loss_reduction)
 
         if survey_weights_column is not None:
             # If survey weights are specified, loss reduction MUST be 'none'
@@ -85,10 +86,11 @@ class MacroConfig(BaseModel):
                 )
         else:
             # If survey weights are NOT specified, but loss reduction is 'none'
-            warnings.warn(
-                "Loss reduction is 'none', but no survey_weight_col specified. Ensure intended.",
-                UserWarning,
-            )
+            if loss_reduction == "none":
+                warnings.warn(
+                    "Loss reduction is 'none', but no survey_weight_col specified. Ensure intended.",
+                    UserWarning,
+                )
         return data
 
     @model_validator(mode="after")
@@ -185,7 +187,7 @@ class MacroConfig(BaseModel):
 
                 if not found_matching_reg_eval:
                     raise ValueError(
-                        f"PValEarlyStoppingProbe is configured to monitor DataSource '{monitored_ds.value}', "
+                        f"PValEarlyStoppingProbe is configured to monitor DataSource '{monitored_ds}', "
                         f"but no 'regression_eval' probe is scheduled to run on this data source. "
                         f"P-value based early stopping requires regression evaluations on all monitored sources."
                     )
@@ -198,10 +200,10 @@ class MacroConfig(BaseModel):
                     and found_matching_reg_eval
                 ):
                     warnings.warn(
-                        f"PValEarlyStoppingProbe is scheduled to check DataSource '{monitored_ds.value}' every epoch, "
+                        f"PValEarlyStoppingProbe is scheduled to check DataSource '{monitored_ds}' every epoch, "
                         f"but the corresponding 'regression_eval' probe for this data source is NOT scheduled every epoch. "
                         f"This may lead to early stopping decisions based on stale p-values. "
-                        f"Consider aligning the 'regression_eval' probe's frequency_value to 1 for '{monitored_ds.value}' for more reactive early stopping.",
+                        f"Consider aligning the 'regression_eval' probe's frequency_value to 1 for '{monitored_ds}' for more reactive early stopping.",
                         UserWarning,
                     )
         return self

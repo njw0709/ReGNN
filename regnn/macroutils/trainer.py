@@ -49,10 +49,12 @@ def train(
     )
 
     train_dataset = all_dataset.get_subset(train_indices)
-    test_dataset = all_dataset.get_subset(test_indices) if test_indices else None
+    test_dataset = (
+        all_dataset.get_subset(test_indices) if test_indices is not None else None
+    )
 
     # SVD matrix computation remains the same, using train_dataset.config and regnn_model_cfg
-    if regnn_model_cfg.svd.enabled:
+    if regnn_model_cfg.nn_config.svd.enabled:
         moderator_columns = train_dataset.config.moderators
         if isinstance(moderator_columns[0], list):
             svd_matrices = []
@@ -61,21 +63,23 @@ def train(
                 # Assuming train_dataset.df_orig contains the full original data for these columns before any potential subsetting not reflected in config.moderators
                 moderators_np = train_dataset.df_orig[mod_list].to_numpy()
                 k_dim_svd = (
-                    regnn_model_cfg.svd.k_dim[i]
+                    regnn_model_cfg.nn_config.svd.k_dim[i]
                     if isinstance(regnn_model_cfg.svd.k_dim, list)
-                    else regnn_model_cfg.svd.k_dim
+                    else regnn_model_cfg.nn_config.svd.k_dim
                 )
                 svd_matrix = compute_svd(moderators_np, k_dim=k_dim_svd)
                 svd_matrices.append(svd_matrix)
-            regnn_model_cfg.svd.svd_matrix = svd_matrices
+            regnn_model_cfg.nn_config.svd.svd_matrix = svd_matrices
         else:
             moderators_np = train_dataset.df_orig[moderator_columns].to_numpy()
             k_dim_svd = (
-                regnn_model_cfg.svd.k_dim[0]
-                if isinstance(regnn_model_cfg.svd.k_dim, list)
-                else regnn_model_cfg.svd.k_dim
+                regnn_model_cfg.nn_config.svd.k_dim[0]
+                if isinstance(regnn_model_cfg.nn_config.svd.k_dim, list)
+                else regnn_model_cfg.nn_config.svd.k_dim
             )
-            regnn_model_cfg.svd.svd_matrix = compute_svd(moderators_np, k_dim=k_dim_svd)
+            regnn_model_cfg.nn_config.svd.svd_matrix = compute_svd(
+                moderators_np, k_dim=k_dim_svd
+            )
 
     # 3. Model Initialization using from_config
     model = ReGNN.from_config(
@@ -168,7 +172,7 @@ def train(
             predictions = model(**model_input_kwargs)
 
             batch_loss_main = torch.tensor(0.0, device=training_hp.device)
-            if regnn_model_cfg.vae and isinstance(
+            if regnn_model_cfg.nn_config.vae and isinstance(
                 training_hp.loss_options, KLDLossConfig
             ):
                 output_mu, output_log_var = predictions
@@ -184,7 +188,7 @@ def train(
 
             total_batch_loss = batch_loss_main + batch_loss_reg
 
-            if training_hp.use_survey_weights and s_weights is not None:
+            if s_weights is not None:
                 # Ensure s_weights is 1D and matches batch_loss_main's batch dimension if batch_loss_main is not scalar
                 if (
                     total_batch_loss.ndim > 0
