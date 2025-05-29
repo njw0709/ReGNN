@@ -23,7 +23,6 @@ class IntermediateIndexSavedProbeResult(ProbeData):
 
 # --- EarlyStoppingSignalProbeResult ---
 class EarlyStoppingSignalProbeResult(ProbeData):
-    probe_type_name: str = Field("early_stopping_signal", const=True)
     should_stop: bool = Field(..., description="Indicates if the training should stop.")
     reason: Optional[str] = Field(None, description="Reason for the stopping signal.")
     # You can add more fields here if needed, e.g., the epoch it was triggered, specific p-values etc.
