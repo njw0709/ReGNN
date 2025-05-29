@@ -7,6 +7,7 @@ from .regression import (
     VarianceInflationFactorProbe,
     L2NormProbe,
 )
+from .probe_config import FrequencyType, DataSource, ProbeScheduleConfig
 
 __all__ = [
     "ProbeData",
@@ -17,4 +18,7 @@ __all__ = [
     "OLSModeratedResultsProbe",
     "VarianceInflationFactorProbe",
     "L2NormProbe",
+    "FrequencyType",
+    "DataSource",
+    "ProbeScheduleConfig",
 ]
