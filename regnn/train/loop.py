@@ -149,8 +149,15 @@ def process_iteration(
         optimizer.zero_grad()
 
     # Forward pass
+    if model.use_closed_form_linear_weights:
+        y = sample["outcome"]
+    else:
+        y = None
     outputs = model(
-        sample["moderators"], sample["focal_predictor"], sample["controlled_predictors"]
+        sample["moderators"],
+        sample["focal_predictor"],
+        sample["controlled_predictors"],
+        y=y,
     )
 
     # Calculate loss

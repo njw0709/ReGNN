@@ -43,8 +43,7 @@ def regression_eval_regnn(
         if focal_predictor in eval_regnn_dataset.mean_std_dict:
             mean_val, std_val = eval_regnn_dataset.mean_std_dict[focal_predictor]
             thresholded_value = (
-                model.interactor_bias.cpu().detach().numpy().item(0) * std_val
-                + mean_val
+                model.xf_bias.cpu().detach().numpy().item(0) * std_val + mean_val
             )
             # Update the thresholded_value in the options
             eval_options.focal_predictor_process_options.thresholded_value = (
@@ -56,7 +55,7 @@ def regression_eval_regnn(
                 f"Warning: Stats for focal predictor '{focal_predictor}' not found in dataset.mean_std_dict. Using raw bias."
             )
             eval_options.focal_predictor_process_options.thresholded_value = (
-                model.interactor_bias.cpu().detach().numpy().item(0)
+                model.xf_bias.cpu().detach().numpy().item(0)
             )
 
     # Get model predictions

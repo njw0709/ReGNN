@@ -89,6 +89,10 @@ class ReGNNConfig(BaseModel):
     interaction_direction: str = Field(
         "positive", description="Direction of interaction effect"
     )
+    use_closed_form_linear_weights: bool = Field(
+        False,
+        description="Whether to update linear weights using closed form solution or gradient descent",
+    )
 
     @field_validator("interaction_direction")
     def validate_interaction_direction(cls, v):

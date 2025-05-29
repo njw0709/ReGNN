@@ -145,14 +145,13 @@ def setup_loss_and_optimizer(
             )
 
     # 3. Setup Optimizer
-
-    wd_nn = optimizer_opts.weight_decay.weight_decay_nn
-    wd_reg = optimizer_opts.weight_decay.weight_decay_regression
-
+    nn_params = [p for p in model.index_prediction_model.parameters()]
+    if model.include_bias_focal_predictor:
+        nn_params.append(model.xf_bias)
     optimizer = optim.AdamW(
         [
             {
-                "params": model.index_prediction_model.parameters(),
+                "params": nn_params,
                 "weight_decay": optimizer_opts.weight_decay.weight_decay_nn,
                 "lr": optimizer_opts.lr.lr_nn,
             },
@@ -217,8 +216,11 @@ def generate_stata_command(
     # Add summary index and focal predictor interactions
     cmd_parts.append(f"c.{focal}#c.{regression_config.index_column_name}")
 
-    # Add controlled variables
-    for col in regression_config.controlled_cols + regression_config.moderators:
+    # Add linear terms
+    linear_terms = regression_config.controlled_cols
+    if regression_config.control_moderators:
+        linear_terms += regression_config.moderators
+    for col in linear_terms:
         col_name = get_var_name(col)
         # Check if the column is binary or categorical in the data config
         if data_readin_config.binary_cols and col in data_readin_config.binary_cols:

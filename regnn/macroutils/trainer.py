@@ -307,6 +307,20 @@ def train(
         }
         print(f"Final evaluation summary: {final_summary}")
 
+    if probe_opts.save_model:
+        model_file_prefix = (
+            f"{probe_opts.model_save_name}-{probe_opts.file_id}"
+            if probe_opts.file_id
+            else probe_opts.model_save_name
+        )
+
+        save_model(
+            model,
+            model_type="regnn",
+            save_dir=probe_opts.save_dir,
+            data_id=f"{model_file_prefix}_{epoch}_final",
+        )
+
     if probe_opts.save_intermediate_index and intermediate_indices:
         intermediate_indices_np = np.hstack(intermediate_indices)
         df_indices = pd.DataFrame(intermediate_indices_np)

@@ -361,6 +361,7 @@ class ReGNN(nn.Module):
             output_mu_var=config.nn_config.output_mu_var,
             interaction_direction=config.interaction_direction,
             n_ensemble=config.nn_config.n_ensemble,
+            use_closed_form_linear_weights=config.use_closed_form_linear_weights,
         )
 
     def __init__(
@@ -382,6 +383,7 @@ class ReGNN(nn.Module):
         output_mu_var: bool = True,
         interaction_direction: str = "positive",
         n_ensemble: int = 1,
+        use_closed_form_linear_weights: bool = False,
     ):
         super(ReGNN, self).__init__()
         self.vae = vae
@@ -390,6 +392,8 @@ class ReGNN(nn.Module):
         self.num_controlled = num_controlled
         self.hidden_layer_sizes = hidden_layer_sizes
         self.control_moderators = control_moderators
+        self.use_closed_form_linear_weights = use_closed_form_linear_weights
+
         if isinstance(num_moderators, list):
             self.num_models = len(num_moderators)
         else:
@@ -399,14 +403,26 @@ class ReGNN(nn.Module):
 
         if control_moderators:
             if isinstance(num_moderators, list):
-                num_controlled = num_controlled + sum(num_moderators)
+                num_linear = num_controlled + sum(num_moderators)
             else:
-                num_controlled = num_controlled + num_moderators
+                num_linear = num_controlled + num_moderators
         # Only create controlled_var_weights if we have controlled variables
-        self.has_linear_terms = num_controlled > 0
+        self.has_linear_terms = num_linear > 0
 
-        if self.has_linear_terms:
-            self.linear_weights = nn.Linear(num_controlled, 1)
+        if not self.use_closed_form_linear_weights:
+            self.focal_predictor_main_weight = nn.Parameter(torch.randn(1, 1))
+            self.predicted_index_weight = nn.Parameter(torch.randn(1, self.num_models))
+            self.mmr_parameters = [
+                self.focal_predictor_main_weight,
+                self.predicted_index_weight,
+            ]
+            if self.has_linear_terms:
+                self.linear_weights = nn.Linear(num_linear, 1)
+                self.mmr_parameters.extend(
+                    [param for param in self.linear_weights.parameters()]
+                )
+        else:
+            self.mmr_parameters = []
 
         self.dropout_rate = dropout
         self.index_prediction_model = IndexPredictionModel(
@@ -426,21 +442,10 @@ class ReGNN(nn.Module):
         self.device = device
         self.batch_norm = batch_norm
 
-        self.focal_predictor_main_weight = nn.Parameter(torch.randn(1, 1))
-        self.predicted_index_weight = nn.Parameter(torch.randn(1, self.num_models))
-
         self.include_bias_focal_predictor = include_bias_focal_predictor
-        self.mmr_parameters = [
-            self.focal_predictor_main_weight,
-            self.predicted_index_weight,
-        ]
-        if self.has_linear_terms:
-            self.mmr_parameters.extend(
-                [param for param in self.linear_weights.parameters()]
-            )
+
         if include_bias_focal_predictor:
-            self.interactor_bias = nn.Parameter(torch.randn(1, 1))
-            self.mmr_parameters.append(self.interactor_bias)
+            self.xf_bias = nn.Parameter(torch.randn(1, 1))
         self.interaction_direction = interaction_direction
         self.initialize_weights()
 
@@ -449,30 +454,53 @@ class ReGNN(nn.Module):
             if isinstance(module, nn.Linear):
                 init.kaiming_normal_(module.weight)
 
-    def forward(self, moderators, focal_predictor, controlled_vars):
+    def _get_linear_term_variables(self, moderators, focal_predictor, controlled_vars):
         if not self.control_moderators:
             all_linear_vars = controlled_vars
         else:
             if self.has_technical_controlled_vars and self.control_moderators:
                 if self.num_models == 1:
-                    all_linear_vars = torch.cat((controlled_vars, moderators), 1)
+                    all_linear_vars = torch.cat((controlled_vars, moderators), 2)
                 else:
-                    all_linear_vars = torch.cat((controlled_vars, *moderators), 1)
+                    all_linear_vars = torch.cat((controlled_vars, *moderators), 2)
             elif not self.has_technical_controlled_vars and self.control_moderators:
                 if self.num_models == 1:
                     all_linear_vars = moderators
                 else:
-                    all_linear_vars = torch.cat([*moderators], 1)
+                    all_linear_vars = torch.cat([*moderators], 2)
             elif self.has_technical_controlled_vars and not self.control_moderators:
                 all_linear_vars = controlled_vars
             else:
-                all_linear_vars = None
+                all_linear_vars = 0.0
+        if self.use_closed_form_linear_weights:
+            all_linear_vars = torch.cat([all_linear_vars, focal_predictor], 2)
+        return all_linear_vars
 
-        # Only compute controlled term if we have controlled variables
-        controlled_term = (
-            self.linear_weights(all_linear_vars) if self.has_linear_terms else 0.0
-        )
+    def forward(
+        self,
+        moderators,
+        focal_predictor,
+        controlled_vars,
+        y: Union[None, torch.tensor] = None,
+    ):
+        if self.use_closed_form_linear_weights:
+            assert y is not None
+        # shapes: moderators: (batch, 1, n); focal_predictor: (batch, 1, 1);
+        # threshold focal predictor if indicated.
+        if self.include_bias_focal_predictor:
+            focal_predictor = torch.maximum(
+                torch.tensor([[0.0]], device=self.device),
+                (torch.unsqueeze(focal_predictor, 1) - torch.abs(self.xf_bias)),
+            )
+        else:
+            focal_predictor = torch.unsqueeze(focal_predictor, 1)
 
+        # get linear term variables
+        all_linear_vars = self._get_linear_term_variables(
+            moderators, focal_predictor, controlled_vars
+        )  # Shape: (batch_size, 1, n_linear_terms)
+
+        # compute index prediction
         if self.vae:
             if not self.training:
                 predicted_index, log_var = self.index_prediction_model(moderators)
@@ -486,41 +514,53 @@ class ReGNN(nn.Module):
         else:
             predicted_index = self.index_prediction_model(moderators)
 
-        if self.include_bias_focal_predictor:
-            focal_predictor = torch.maximum(
-                torch.tensor([[0.0]], device=self.device),
-                (torch.unsqueeze(focal_predictor, 1) - torch.abs(self.interactor_bias)),
-            )
-        else:
-            focal_predictor = torch.unsqueeze(focal_predictor, 1)
-
-        # Calculate interaction term based on number of models
         if isinstance(predicted_index, list):
-            predicted_index = torch.stack(
-                predicted_index
-            )  # Shape: (num_models, batch_size, 1)
-            predicted_index_weight = torch.abs(self.predicted_index_weight).reshape(
-                self.predicted_index_weight.shape[1], 1, 1
-            )  # Shape: (num_models, 1, 1)
-            predicted_interaction_term = (predicted_index_weight * predicted_index).sum(
-                dim=0
-            )  # Shape: (batch_size, 1)
-        else:
-            predicted_interaction_term = (
-                torch.abs(self.predicted_index_weight) * predicted_index
+            predicted_index = torch.cat(
+                predicted_index, dim=2
+            )  # Shape: (batch_size, 1, num_models)
+
+        # compute outcome
+        if not self.use_closed_form_linear_weights:
+            # Calculate interaction term based on number of models
+            if isinstance(predicted_index, list):
+                predicted_index_weight = torch.abs(self.predicted_index_weight).reshape(
+                    1, 1, self.predicted_index_weight.shape[1]
+                )  # Shape: (1, 1, num_models)
+                predicted_interaction_term = (
+                    predicted_index_weight * predicted_index
+                ).sum(
+                    dim=-1, keepdim=True
+                )  # Shape: (batch_size, 1, 1)
+            else:
+                predicted_interaction_term = (
+                    torch.abs(self.predicted_index_weight) * predicted_index
+                )
+            predicted_interaction_term = predicted_interaction_term * focal_predictor
+
+            if self.interaction_direction != "positive":
+                predicted_interaction_term = -1.0 * predicted_interaction_term
+
+            # Only compute controlled term if we have controlled variables
+            linear_terms = (
+                self.linear_weights(all_linear_vars) if self.has_linear_terms else 0.0
             )
-        predicted_interaction_term = predicted_interaction_term * focal_predictor
 
-        if self.interaction_direction != "positive":
-            predicted_interaction_term = -1.0 * predicted_interaction_term
+            focal_predictor_main_effect = (
+                self.focal_predictor_main_weight * focal_predictor
+            )
 
-        focal_predictor_main_effect = self.focal_predictor_main_weight * focal_predictor
-
-        outcome = (
-            controlled_term + focal_predictor_main_effect + predicted_interaction_term
-        )
-        # Reshape outcome to match expected target shape [batch_size, 1]
-        outcome = outcome.squeeze(-1)
+            outcome = (
+                linear_terms + focal_predictor_main_effect + predicted_interaction_term
+            )
+            # Reshape outcome to match expected target shape [batch_size, 1]
+            outcome = outcome.squeeze(-1)
+        else:
+            X_full = torch.cat(
+                [all_linear_vars, predicted_index * focal_predictor], dim=2
+            )  # shape: [batch, 1, n_terms]
+            X_full = X_full.squeeze(1)  # shape: [batch, n_terms]
+            weights = torch.linalg.pinv(X_full) @ y
+            outcome = X_full @ weights
         if self.vae:
             if not self.training:
                 return outcome
