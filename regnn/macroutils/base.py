@@ -8,6 +8,7 @@ from regnn.train import (
     PValEarlyStoppingConfig,
 )
 from regnn.data import DataFrameReadInConfig
+from regnn.probe import RegressionEvalProbeScheduleConfig, DataSource
 
 
 class ModeratedRegressionConfig(BaseModel):
@@ -128,45 +129,65 @@ class MacroConfig(BaseModel):
         return data
 
     @model_validator(mode="after")
-    def validate_index_consistency(self) -> "MacroConfig":
+    def validate_early_stopping_probes(self) -> "MacroConfig":
         """
-        Validates that the index_column_name is consistent between regression config and probe options.
+        If PValEarlyStoppingConfig is enabled, validates that:
+        1. RegressionEvalProbeScheduleConfig is scheduled for DataSource.TRAIN.
+        2. RegressionEvalProbeScheduleConfig is scheduled for DataSource.TEST.
+        These are needed to get p-values for early stopping.
         """
-        regression_index = self.regression.index_column_name
-        probe_index = self.probe.regression_eval_opts.index_column_name
-
-        if regression_index != probe_index:
-            raise ValueError(
-                f"Inconsistent index_column_name: "
-                f"regression config uses '{regression_index}' but "
-                f"probe regression_eval_opts uses '{probe_index}'"
-            )
-        return self
-
-    @model_validator(mode="after")
-    def validate_early_stopping_regression(self) -> "MacroConfig":
-        """
-        Validates that regression evaluation is available when PValEarlyStoppingConfig is enabled.
-        Also ensures that test set results are enabled since they are needed for early stopping validation.
-        """
-        if (
+        if not (
             isinstance(self.training.stopping_options, PValEarlyStoppingConfig)
             and self.training.stopping_options.enabled
         ):
-            if not self.probe.regression_eval_opts:
-                raise ValueError(
-                    "PValEarlyStoppingConfig is enabled but regression_eval_opts is not set in probe options. "
-                    "Regression evaluation is required for p-value based early stopping."
-                )
-            if not self.probe.regression_eval_opts.evaluate:
-                raise ValueError(
-                    "PValEarlyStoppingConfig is enabled but regression evaluation is disabled "
-                    "(probe.regression_eval_opts.evaluate=False). "
-                    "Regression evaluation must be enabled for p-value based early stopping."
-                )
-            if not self.probe.get_testset_results:
-                raise ValueError(
-                    "PValEarlyStoppingConfig is enabled but get_testset_results is disabled in probe options. "
-                    "Test set results are required for p-value based early stopping validation."
-                )
+            return self  # Early stopping not enabled or not PVal type
+
+        has_train_pval_probe = False
+        has_test_pval_probe = False
+
+        for schedule in self.probe.schedules:
+            if isinstance(schedule, RegressionEvalProbeScheduleConfig):
+                # Check if it runs on TRAIN data
+                if DataSource.TRAIN in schedule.data_sources:
+                    has_train_pval_probe = True
+
+                # Check if it runs on TEST data
+                if DataSource.TEST in schedule.data_sources:
+                    has_test_pval_probe = True
+
+            if has_train_pval_probe and has_test_pval_probe:
+                break  # Both found
+
+        if not has_train_pval_probe:
+            raise ValueError(
+                "PValEarlyStoppingConfig is enabled, but no 'regression_eval' probe is scheduled "
+                "to run on DataSource.TRAIN. This is required for p-value based early stopping."
+            )
+
+        if not has_test_pval_probe:
+            raise ValueError(
+                "PValEarlyStoppingConfig is enabled, but no 'regression_eval' probe is scheduled "
+                "to run on DataSource.TEST. This is required for p-value based early stopping."
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_probe_schedule_consistency(self) -> "MacroConfig":
+        """
+        Validates specific probe schedule configurations for consistency:
+        - For RegressionEvalProbeScheduleConfig: checks if its index_column_name
+          matches the main regression.index_column_name.
+        """
+        main_regression_index = self.regression.index_column_name
+
+        for schedule in self.probe.schedules:
+            if isinstance(schedule, RegressionEvalProbeScheduleConfig):
+                if schedule.index_column_name != main_regression_index:
+                    raise ValueError(
+                        f"Inconsistent index_column_name for a 'regression_eval' probe: "
+                        f"Probe schedule uses '{schedule.index_column_name}', but "
+                        f"main regression config uses '{main_regression_index}'. "
+                        f"These must match for 'regression_eval' probes."
+                    )
         return self

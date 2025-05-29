@@ -1,8 +1,17 @@
-from typing import Optional, Literal
+from typing import Optional, Literal, List, Union
 from pydantic import BaseModel, Field, ConfigDict
 import torch
-from regnn.eval.base import RegressionEvalOptions
 from regnn.constants import TEMP_DIR
+
+# Import new schedule configs
+from regnn.probe import (
+    ProbeScheduleConfig,
+    RegressionEvalProbeScheduleConfig,
+    SaveCheckpointProbeScheduleConfig,
+    SaveIntermediateIndexProbeScheduleConfig,
+    GetObjectiveProbeScheduleConfig,
+    GetL2LengthProbeScheduleConfig,
+)
 
 
 class PValEarlyStoppingConfig(BaseModel):
@@ -145,25 +154,20 @@ class ProbeOptions(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=False)
 
-    # File and model saving
-    save_dir: str = Field(
-        TEMP_DIR, description="where the probed informations are saved"
+    schedules: List[
+        Union[
+            RegressionEvalProbeScheduleConfig,
+            SaveCheckpointProbeScheduleConfig,
+            SaveIntermediateIndexProbeScheduleConfig,
+            GetObjectiveProbeScheduleConfig,
+            GetL2LengthProbeScheduleConfig,
+            ProbeScheduleConfig,
+        ]
+    ] = Field(
+        default_factory=list,
+        description="List of probe schedules to run during training and evaluation",
     )
-    file_id: Optional[str] = Field(None, description="Identifier for saving files")
-    save_model: bool = Field(False, description="Whether to save the model")
-    save_model_epochs: int = Field(1, ge=1, description="Epochs to save model.")
-    model_save_name: str = Field("regnn_", description="model checkpoint save name")
-    save_intermediate_index: bool = Field(
-        False, description="Whether to save intermediate indices"
-    )
-    regression_eval_opts: Optional[RegressionEvalOptions] = Field(
-        None, description="regression eval options"
-    )
-    # Output behavior
+
     return_trajectory: bool = Field(
         False, description="Whether to return training trajectory"
     )
-    get_testset_results: bool = Field(
-        True, description="Whether to compute results on test set"
-    )
-    get_l2_lengths: bool = Field(True, description="Whether to compute L2 norms")

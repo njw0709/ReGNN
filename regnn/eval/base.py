@@ -1,6 +1,6 @@
 from typing import Literal, Callable, TypeVar
 import numpy as np
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field
 import torch
 
 T = TypeVar("T", np.ndarray, torch.Tensor)
@@ -57,41 +57,3 @@ class FocalPredictorPreProcessOptions(BaseModel):
             return processed
 
         return process
-
-
-class RegressionEvalOptions(BaseModel):
-    """Input configuration for evaluation functions"""
-
-    model_config = ConfigDict(arbitrary_types_allowed=False)
-
-    regress_cmd: str = Field(..., description="Regression command to run")
-
-    evaluation_function: Literal["stata", "statsmodels"] = Field(
-        "statsmodels", description="Which evaluation function to use"
-    )
-    evaluate: bool = Field(False, description="Whether to evaluate during training")
-    eval_epochs: int = Field(10, ge=1, description="Frequency of evaluation in epochs")
-    focal_predictor_process_options: FocalPredictorPreProcessOptions = Field(
-        FocalPredictorPreProcessOptions(
-            threshold=False, thresholded_value=0.0, interaction_direction="positive"
-        ),
-        description="Sets how to preprocess focal predictor",
-    )
-    index_column_name: str = Field(
-        "summary_index", description="name of the produced summary index"
-    )
-    post_training_eval: bool = Field(
-        True,
-        description="whether to run regression on whole dataset after the training is done",
-    )
-
-    @field_validator("regress_cmd")
-    def validate_regress_cmd(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("regress_cmd cannot be empty")
-        parts = v.split()
-        if len(parts) < 3:
-            raise ValueError(
-                "regress_cmd must have at least 3 parts: command, dependent var, and independent var"
-            )
-        return v

@@ -7,7 +7,16 @@ from .regression import (
     VarianceInflationFactorProbe,
     L2NormProbe,
 )
-from .probe_config import FrequencyType, DataSource, ProbeScheduleConfig
+from .probe_config import (
+    FrequencyType,
+    DataSource,
+    ProbeScheduleConfig,
+    RegressionEvalProbeScheduleConfig,
+    SaveCheckpointProbeScheduleConfig,
+    SaveIntermediateIndexProbeScheduleConfig,
+    GetObjectiveProbeScheduleConfig,
+    GetL2LengthProbeScheduleConfig,
+)
 
 __all__ = [
     "ProbeData",
@@ -21,4 +30,9 @@ __all__ = [
     "FrequencyType",
     "DataSource",
     "ProbeScheduleConfig",
+    "RegressionEvalProbeScheduleConfig",
+    "SaveCheckpointProbeScheduleConfig",
+    "SaveIntermediateIndexProbeScheduleConfig",
+    "GetObjectiveProbeScheduleConfig",
+    "GetL2LengthProbeScheduleConfig",
 ]
