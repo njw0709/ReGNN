@@ -276,13 +276,12 @@ def regression_eval_probe(
             "r(table)"
         ]  # This should be (num_variables x num_stats)
 
-        # Verify expected column indices for b, se, pvalue from _colname or assume standard Stata order
         # Standard order: b (0), se (1), t (2), pvalue (3), ll (4), ul (5)
         COEF_IDX, SE_IDX, PVAL_IDX = 0, 1, 3
 
-        coefficients = r_table_matrix[:, COEF_IDX].tolist()
-        standard_errors = r_table_matrix[:, SE_IDX].tolist()
-        p_values = r_table_matrix[:, PVAL_IDX].tolist()
+        coefficients = r_table_matrix[COEF_IDX, :].tolist()
+        standard_errors = r_table_matrix[SE_IDX, :].tolist()
+        p_values = r_table_matrix[PVAL_IDX, :].tolist()
 
         r_squared = stata_ereturns.get("e(r2)")
         adj_r_squared = stata_ereturns.get("e(r2_a)")

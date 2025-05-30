@@ -66,7 +66,6 @@ class MacroConfig(BaseModel):
         loss_opts = data.training.loss_options
         survey_weights_column = read_cfg.survey_weight_col
         loss_reduction = loss_opts.reduction
-        print(loss_reduction)
 
         if survey_weights_column is not None:
             # If survey weights are specified, loss reduction MUST be 'none'

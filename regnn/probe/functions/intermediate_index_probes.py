@@ -12,11 +12,10 @@ from regnn.probe.dataclass.probe_config import (
     FrequencyType,
 )
 from regnn.probe.dataclass.results import IntermediateIndexSavedProbeResult
+from regnn.data import ReGNNDataset
+from regnn.train import TrainingHyperParams
 
-# from regnn.data import ReGNNDataset # May need this for all_moderators, will assume dataset has .to_tensor()
-
-Dataset = TypeVar("Dataset")
-TrainingHyperParams = TypeVar("TrainingHyperParams")
+# TrainingHyperParams = TypeVar("TrainingHyperParams")
 
 
 def compute_index_prediction(
@@ -37,7 +36,7 @@ def save_intermediate_index_probe(
     model: ReGNN,
     schedule_config: SaveIntermediateIndexProbeScheduleConfig,
     epoch: int,
-    dataset: Optional[Dataset] = None,
+    dataset: Optional[ReGNNDataset] = None,
     data_source_name: Optional[str] = None,
     training_hp: Optional[TrainingHyperParams] = None,
     **kwargs,
@@ -46,24 +45,8 @@ def save_intermediate_index_probe(
     status_message = None
     saved_file_path = "N/A"
 
-    if dataset is None:
-        return IntermediateIndexSavedProbeResult(
-            data_source=data_source_name or "unknown",
-            file_path=saved_file_path,
-            status="skipped",
-            message="Dataset (e.g., all_dataset) was not provided to the probe.",
-        )
-
-    if not hasattr(dataset, "to_tensor"):
-        return IntermediateIndexSavedProbeResult(
-            data_source=data_source_name or "unknown",
-            file_path=saved_file_path,
-            status="skipped",
-            message="Provided dataset does not have a 'to_tensor' method to extract moderators.",
-        )
-
     device_to_use = "cpu"
-    if training_hp and hasattr(training_hp, "device"):
+    if training_hp:
         device_to_use = training_hp.device
 
     try:
@@ -74,6 +57,8 @@ def save_intermediate_index_probe(
             raise ValueError("Moderators not found in dataset.to_tensor() result.")
 
         idx_pred_np = compute_index_prediction(model, all_moderators_tensor)
+        df_orig = dataset.df_orig.copy()
+        df_orig[schedule_config.index_column_name]
         df_indices = pd.DataFrame(idx_pred_np)
 
         model_file_base = schedule_config.model_save_name

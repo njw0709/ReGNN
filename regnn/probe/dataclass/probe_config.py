@@ -197,6 +197,9 @@ class SaveIntermediateIndexProbeScheduleConfig(ProbeScheduleConfig):
     file_id: Optional[str] = Field(
         None, description="Optional ID to append to filenames."
     )
+    index_column_name: str = Field(
+        description="produced index column name to append to the original dataframe"
+    )
 
 
 class GetObjectiveProbeScheduleConfig(ProbeScheduleConfig):
