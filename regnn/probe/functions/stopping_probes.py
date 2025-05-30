@@ -122,23 +122,23 @@ def pval_early_stopping_probe(
             reason="No suitable historical evaluation data to check.",
         )
 
-    if len(joint_evaluation_epochs) < schedule_config.n_sequential_epochs_to_pass:
+    if len(joint_evaluation_epochs) < schedule_config.n_sequential_evals_to_pass:
         return EarlyStoppingSignalProbeResult(
             probe_type_name="pval_early_stopping",
             data_source=DataSource.ALL,
             status="skipped",
             message=(
                 f"Not enough joint evaluation epochs ({len(joint_evaluation_epochs)}) to check for "
-                f"{schedule_config.n_sequential_epochs_to_pass} sequential passes. "
+                f"{schedule_config.n_sequential_evals_to_pass} sequential passes. "
                 f"Patience is {schedule_config.patience}."
             ),
             should_stop=False,
-            reason=f"Requires {schedule_config.n_sequential_epochs_to_pass} joint evaluations, found {len(joint_evaluation_epochs)} after patience.",
+            reason=f"Requires {schedule_config.n_sequential_evals_to_pass} joint evaluations, found {len(joint_evaluation_epochs)} after patience.",
         )
 
     # Examine the N most recent joint evaluation epochs
     epochs_to_check = joint_evaluation_epochs[
-        -schedule_config.n_sequential_epochs_to_pass :
+        -schedule_config.n_sequential_evals_to_pass :
     ]
 
     all_n_recent_passed = True
@@ -175,7 +175,7 @@ def pval_early_stopping_probe(
 
     if all_n_recent_passed:
         reason_msg = (
-            f"P-value criterion met for the {schedule_config.n_sequential_epochs_to_pass} most recent joint evaluations "
+            f"P-value criterion met for the {schedule_config.n_sequential_evals_to_pass} most recent joint evaluations "
             f"on {', '.join([ds for ds in schedule_config.data_sources_to_monitor])}. "
             f"Evaluated epochs: {sorted(epochs_to_check)}. Details: {'; '.join(passed_epochs_details_list)}."
         )
@@ -194,12 +194,12 @@ def pval_early_stopping_probe(
             data_source=DataSource.ALL,
             status="success",  # Probe ran successfully
             message=(
-                f"Early stopping criterion NOT met for the {schedule_config.n_sequential_epochs_to_pass} most recent joint evaluations. "
+                f"Early stopping criterion NOT met for the {schedule_config.n_sequential_evals_to_pass} most recent joint evaluations. "
                 f"{failure_reason_detail}"
             ),
             should_stop=False,
             reason=(
-                f"Needed {schedule_config.n_sequential_epochs_to_pass} most recent joint evaluations to pass. "
+                f"Needed {schedule_config.n_sequential_evals_to_pass} most recent joint evaluations to pass. "
                 f"{failure_reason_detail}"
             ),
         )

@@ -22,9 +22,6 @@ class ProbeData(BaseModel):
     message: Optional[str] = Field(
         None, description="Optional message, e.g., error details if status is failure."
     )
-    value: Optional[Any] = Field(
-        None, description="Generic field for a simple, primary result of the probe."
-    )
 
     @computed_field(return_type=str)
     @property

@@ -225,7 +225,7 @@ class PValEarlyStoppingProbeScheduleConfig(ProbeScheduleConfig):
         ge=0,
         description="Number of initial epochs to ignore before checking criterion.",
     )
-    n_sequential_epochs_to_pass: int = Field(
+    n_sequential_evals_to_pass: int = Field(
         1,
         ge=1,
         description="Number of consecutive relevant evaluations the criterion must be met.",
