@@ -1,4 +1,4 @@
-from .base import MacroConfig, ModeratedRegressionConfig
+from .base import MacroConfig
 from .preprocess import read_and_preprocess
 from .trainer import train
 from .utils import (
@@ -9,7 +9,6 @@ from .utils import (
 
 __all__ = [
     "MacroConfig",
-    "ModeratedRegressionConfig",
     "read_and_preprocess",
     "train",
     "load_model",

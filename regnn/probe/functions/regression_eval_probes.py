@@ -109,10 +109,8 @@ def regression_eval_probe(
     **kwargs,
 ) -> Optional[OLSModeratedResultsProbe]:
 
-    current_status = "success"  # Default status
     status_message = None
 
-    print("regression eval...")
     # --- 1. Retrieve MacroConfig & Basic Setup ---
     macro_config: Optional[MacroConfig] = shared_resource_accessor("macro_config")
     if not macro_config:
@@ -274,105 +272,26 @@ def regression_eval_probe(
             )
 
         # pystata r(table) is typically a matrix where rows are variables and columns are stats (b, se, t, pvalue, ll, ul)
-        # Row names (variable names Stata used) are in stata_return["_rowname"]
-        # Column names for r(table) are typically stata_return["_colname"] = ["b", "se", "t", "pvalue", "ll", "ul"]
-
         r_table_matrix = stata_return[
             "r(table)"
         ]  # This should be (num_variables x num_stats)
-
-        print("table:", r_table_matrix)
-        r_table_variable_names = stata_return[
-            "_rowname"
-        ]  # List of variable names as rows in r_table_matrix
-        # stata_col_names = stata_return["_colname"] # Should be ["b", "se", "t", "pvalue", "ll", "ul"]
-        print("variable names:", r_table_variable_names)
 
         # Verify expected column indices for b, se, pvalue from _colname or assume standard Stata order
         # Standard order: b (0), se (1), t (2), pvalue (3), ll (4), ul (5)
         COEF_IDX, SE_IDX, PVAL_IDX = 0, 1, 3
 
-        coefficients: Dict[str, float] = {}
-        standard_errors: Dict[str, float] = {}
-        p_values_dict: Dict[str, float] = {}
-
-        if r_table_matrix.shape[0] != len(r_table_variable_names):
-            raise ValueError(
-                f"Mismatch between r(table) matrix rows ({r_table_matrix.shape[0]}) and _rowname count ({len(r_table_variable_names)})."
-            )
-        if (
-            r_table_matrix.shape[1] < PVAL_IDX + 1
-        ):  # Ensure PVAL_IDX is a valid column index
-            raise ValueError(
-                f"r(table) matrix does not have enough columns for p-values. Shape: {r_table_matrix.shape}"
-            )
-
-        for i, var_name in enumerate(r_table_variable_names):
-            coefficients[var_name] = r_table_matrix[
-                i, COEF_IDX
-            ]  # Stat for variable i, column COEF_IDX
-            standard_errors[var_name] = r_table_matrix[
-                i, SE_IDX
-            ]  # Stat for variable i, column SE_IDX
-            p_values_dict[var_name] = r_table_matrix[
-                i, PVAL_IDX
-            ]  # Stat for variable i, column PVAL_IDX
-        print("Coefficients:", coefficients)
-        print("std error:", standard_errors)
-        print("pvals: ", p_values_dict)
+        coefficients = r_table_matrix[:, COEF_IDX].tolist()
+        standard_errors = r_table_matrix[:, SE_IDX].tolist()
+        p_values = r_table_matrix[:, PVAL_IDX].tolist()
 
         r_squared = stata_ereturns.get("e(r2)")
         adj_r_squared = stata_ereturns.get("e(r2_a)")
         rmse = stata_ereturns.get("e(rmse)")
         n_observations = int(stata_ereturns.get("e(N)", 0))
 
-        focal_var_stata = current_mod_reg_config.focal_predictor
-        index_var_stata = current_mod_reg_config.index_column_name
+        interaction_pval = p_values[1]
 
-        interaction_term_key = None
-        interaction_pval = float("nan")
-
-        possible_interaction_keys = [
-            key
-            for key in r_table_variable_names
-            if focal_var_stata in key and index_var_stata in key and "#" in key
-        ]
-        if possible_interaction_keys:
-            interaction_term_key = possible_interaction_keys[0]
-            if interaction_term_key in p_values_dict:
-                interaction_pval = p_values_dict[interaction_term_key]
-            else:
-                # This case should ideally not happen if possible_interaction_keys found one from r_table_variable_names
-                print(
-                    f"Warning (regression_eval_probe): Matched interaction key '{interaction_term_key}' not found in parsed p_values_dict."
-                )
-        else:
-            # Fallback: try a common Stata pattern if direct search fails
-            # This is less robust as it doesn't account for Stata's potential i/c/o prefixes fully
-            constructed_interaction_pattern = f"c.{focal_var_stata}#c.{index_var_stata}"
-            if constructed_interaction_pattern in p_values_dict:
-                interaction_pval = p_values_dict[constructed_interaction_pattern]
-                interaction_term_key = (
-                    constructed_interaction_pattern  # Found it this way
-                )
-            else:
-                # Another common pattern without c. prefix if they are continuous by default
-                constructed_interaction_pattern_no_c = (
-                    f"{focal_var_stata}#{index_var_stata}"
-                )
-                if constructed_interaction_pattern_no_c in p_values_dict:
-                    interaction_pval = p_values_dict[
-                        constructed_interaction_pattern_no_c
-                    ]
-                    interaction_term_key = constructed_interaction_pattern_no_c
-                else:
-                    print(
-                        f"Warning (regression_eval_probe): Could not definitively identify interaction term among {r_table_variable_names} for p-value using smart search or common patterns. Setting to NaN."
-                    )
-
-        raw_summary_str = f"Stata Regression Output Summary:\nR-squared: {r_squared if r_squared is not None else 'N/A'}\nAdj. R-squared: {adj_r_squared if adj_r_squared is not None else 'N/A'}\nRMSE: {rmse if rmse is not None else 'N/A'}\nN: {n_observations}\nInteraction Term ('{interaction_term_key if interaction_term_key else 'N/A'}') P-value: {interaction_pval:.4f}\n\nCoefficients:\n"
-        for var, coef in coefficients.items():
-            raw_summary_str += f"  {var}: {coef:.4f} (SE: {standard_errors.get(var, float('nan')):.4f}, P>|t|: {p_values_dict.get(var, float('nan')):.4f})\n"
+        raw_summary_str = f"Stata Regression Output Summary:\nR-squared: {r_squared if r_squared is not None else 'N/A'}\nAdj. R-squared: {adj_r_squared if adj_r_squared is not None else 'N/A'}\nRMSE: {rmse if rmse is not None else 'N/A'}\nP-value: {interaction_pval:.4f}"
 
         return OLSModeratedResultsProbe(
             data_source=data_source_name,
@@ -381,7 +300,7 @@ def regression_eval_probe(
             interaction_pval=interaction_pval,
             coefficients=coefficients,
             standard_errors=standard_errors,
-            p_values=p_values_dict,
+            p_values=p_values,
             n_observations=n_observations,
             rsquared=r_squared,
             adjusted_rsquared=adj_r_squared,

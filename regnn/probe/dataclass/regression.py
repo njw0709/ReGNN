@@ -2,6 +2,7 @@ from pydantic import Field, ConfigDict, field_validator, BaseModel
 from .base import ProbeData
 from typing import Dict, Optional, List, Union
 import math
+import numpy as np
 
 
 class ModeratedRegressionConfig(BaseModel):
@@ -44,13 +45,13 @@ class OLSModeratedResultsProbe(OLSResultsProbe):
     interaction_pval: float = Field(-1.0, description="P-value of the interaction term")
 
     # New fields for more comprehensive results
-    coefficients: Optional[Dict[str, float]] = Field(
+    coefficients: Optional[Union[np.ndarray, List]] = Field(
         None, description="All estimated coefficients from the regression model."
     )
-    standard_errors: Optional[Dict[str, float]] = Field(
+    standard_errors: Optional[Union[np.ndarray, List]] = Field(
         None, description="Standard errors for the coefficients."
     )
-    p_values: Optional[Dict[str, float]] = Field(
+    p_values: Optional[Union[np.ndarray, List]] = Field(
         None, description="P-values for the coefficients."
     )
     n_observations: Optional[int] = Field(
