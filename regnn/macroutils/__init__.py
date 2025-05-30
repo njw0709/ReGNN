@@ -5,7 +5,6 @@ from .utils import (
     load_model,
     compute_svd,
     setup_loss_and_optimizer,
-    generate_stata_command,
 )
 
 __all__ = [
@@ -16,5 +15,4 @@ __all__ = [
     "load_model",
     "compute_svd",
     "setup_loss_and_optimizer",
-    "generate_stata_command",
 ]

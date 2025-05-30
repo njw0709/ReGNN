@@ -17,6 +17,7 @@ from .probe_config import (
     GetObjectiveProbeScheduleConfig,
     GetL2LengthProbeScheduleConfig,
     PValEarlyStoppingProbeScheduleConfig,
+    FocalPredictorPreProcessOptions,
 )
 
 # Import new result types
@@ -46,4 +47,5 @@ __all__ = [
     "GetObjectiveProbeScheduleConfig",
     "GetL2LengthProbeScheduleConfig",
     "PValEarlyStoppingProbeScheduleConfig",
+    "FocalPredictorPreProcessOptions",
 ]

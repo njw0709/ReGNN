@@ -1,6 +1,10 @@
 from enum import Enum
-from typing import List, Optional, Dict, Any, Literal, Union
+from typing import List, Optional, Dict, Any, Literal, Union, Callable, TypeVar
 from pydantic import BaseModel, field_validator, ConfigDict, Field
+import numpy as np
+import torch
+
+T = TypeVar("T", np.ndarray, torch.Tensor)
 
 
 class FrequencyType(str, Enum):
@@ -89,6 +93,59 @@ class ProbeScheduleConfig(BaseModel):
         return processed_sources
 
 
+class FocalPredictorPreProcessOptions(BaseModel):
+    threshold: bool = Field(
+        True, description="Whether to apply thresholding on the focal predictor"
+    )
+    thresholded_value: float = Field(
+        0.0, description="Value to use for thresholding the focal predictor"
+    )
+    interaction_direction: Literal["positive", "negative"] = Field(
+        "positive", description="Direction of interaction effect"
+    )
+
+    def create_preprocessor(self) -> Callable[[T], T]:
+        """
+        Creates a function that processes model outputs according to the specified options.
+        Supports both numpy arrays and PyTorch tensors.
+
+        Returns:
+            A function that takes a numpy array or PyTorch tensor and returns the same type
+        """
+
+        def process(focal_predictor: T) -> T:
+            # Convert to numpy for processing if it's a tensor
+            is_tensor = isinstance(focal_predictor, torch.Tensor)
+            if is_tensor:
+                focal_predictor_np = focal_predictor.detach().cpu().numpy()
+            else:
+                focal_predictor_np = focal_predictor
+
+            # Process the array
+            if self.threshold:
+                if self.interaction_direction == "positive":
+                    processed = np.where(
+                        focal_predictor_np > self.thresholded_value,
+                        focal_predictor_np,
+                        0,
+                    )
+                else:
+                    processed = np.where(
+                        focal_predictor_np < self.thresholded_value,
+                        focal_predictor_np,
+                        0,
+                    )
+            else:
+                processed = focal_predictor_np
+
+            # Convert back to tensor if input was a tensor
+            if is_tensor:
+                return torch.from_numpy(processed).to(focal_predictor.device)
+            return processed
+
+        return process
+
+
 class RegressionEvalProbeScheduleConfig(ProbeScheduleConfig):
     probe_type: Literal["regression_eval"] = "regression_eval"
     regress_cmd: Optional[str] = Field(
@@ -104,9 +161,11 @@ class RegressionEvalProbeScheduleConfig(ProbeScheduleConfig):
     )
     # Replaced Dict with a more specific placeholder if FocalPredictorPreProcessOptions is intended.
     # For now, keeping as Dict[str, Any] to avoid circular dependency or missing import.
-    focal_predictor_process_options: Optional[Dict[str, Any]] = Field(
-        default_factory=dict,
-        description="Options for processing the focal predictor (e.g. thresholding). Corresponds to FocalPredictorPreProcessOptions model.",
+    focal_predictor_preprocess_options: Optional[FocalPredictorPreProcessOptions] = (
+        Field(
+            None,
+            description="Options for processing the focal predictor (e.g. thresholding). Corresponds to FocalPredictorPreProcessOptions model.",
+        )
     )
 
     # Removed validator for regress_cmd as it was too basic and might be better handled by the probe itself.

@@ -2,24 +2,100 @@ import pandas as pd
 from typing import Dict, Any, Callable, Optional, TypeVar
 
 from ..registry import register_probe
-from ..dataclass.probe_config import RegressionEvalProbeScheduleConfig, DataSource
+from ..dataclass.probe_config import RegressionEvalProbeScheduleConfig
 from ..dataclass.regression import OLSModeratedResultsProbe
 
 from regnn.train import TrainingHyperParams
-from regnn.macroutils import (
-    generate_stata_command,
-    ModeratedRegressionConfig,
-    MacroConfig,
-)
+
+ModeratedRegressionConfig = TypeVar("ModeratedRegressionConfig")
+MacroConfig = TypeVar("MacroConfig")
 from regnn.eval import init_stata  # For initializing Stata connection
 
 # Corrected import path for local_compute_index_prediction:
 from .intermediate_index_probes import compute_index_prediction
-from regnn.eval import (
+from ..dataclass.probe_config import (
     FocalPredictorPreProcessOptions,
 )
 from regnn.data import ReGNNDataset, DataFrameReadInConfig  # Import ReGNNDataset
 from regnn.model import ReGNN
+
+
+def generate_stata_command(
+    data_readin_config: DataFrameReadInConfig,
+    regression_config: ModeratedRegressionConfig,
+) -> str:
+    """
+    Generate a Stata regression command based on the configuration.
+    Uses the rename_dict from data_readin_config to map internal column names to Stata variable names.
+
+    Returns:
+        str: The complete Stata regression command
+    """
+
+    # Helper function to get the correct variable name
+    def get_var_name(col: str) -> str:
+        # If col is a value in rename_dict, return its key
+        # If col is a key in rename_dict, return the original name
+        # Otherwise return the original name
+        rename_dict = data_readin_config.rename_dict
+        if col in rename_dict.values():
+            # Find the key for this value
+            for key, value in rename_dict.items():
+                if value == col:
+                    return key
+        return col
+
+    # Start with basic regression command
+    cmd_parts = ["regress"]
+
+    # Add outcome and focal predictor with interaction
+    outcome = get_var_name(regression_config.outcome_col)
+    focal = get_var_name(regression_config.focal_predictor)
+
+    # Add outcome and focal predictor with interaction
+    cmd_parts.append(outcome)
+
+    # Add appropriate prefix to focal predictor based on its type
+    if (
+        data_readin_config.binary_cols
+        and regression_config.focal_predictor in data_readin_config.binary_cols
+    ) or (
+        data_readin_config.categorical_cols
+        and regression_config.focal_predictor in data_readin_config.categorical_cols
+    ):
+        cmd_parts.append(f"i.{focal}")
+    else:
+        cmd_parts.append(f"c.{focal}")
+
+    # Add summary index and focal predictor interactions
+    cmd_parts.append(f"c.{focal}#c.{regression_config.index_column_name}")
+
+    # Add linear terms
+    linear_terms = regression_config.controlled_cols
+    if regression_config.control_moderators:
+        linear_terms += regression_config.moderators
+    for col in linear_terms:
+        col_name = get_var_name(col)
+        # Check if the column is binary or categorical in the data config
+        if data_readin_config.binary_cols and col in data_readin_config.binary_cols:
+            cmd_parts.append(f"i.{col_name}")
+        elif (
+            data_readin_config.categorical_cols
+            and col in data_readin_config.categorical_cols
+        ):
+            cmd_parts.append(f"i.{col_name}")
+        elif data_readin_config.ordinal_cols and col in data_readin_config.ordinal_cols:
+            cmd_parts.append(f"i.{col_name}")
+        else:
+            assert col in data_readin_config.continuous_cols
+            cmd_parts.append(f"c.{col_name}")
+
+    # Add survey weights if specified
+    if data_readin_config.survey_weight_col is not None:
+        weight_col = get_var_name(data_readin_config.survey_weight_col)
+        cmd_parts.append(f"[pweight={weight_col}]")
+
+    return " ".join(cmd_parts)
 
 
 @register_probe("regression_eval")
@@ -37,14 +113,17 @@ def regression_eval_probe(
     current_status = "success"  # Default status
     status_message = None
 
+    print("regression eval...")
     # --- 1. Retrieve MacroConfig & Basic Setup ---
     macro_config: Optional[MacroConfig] = shared_resource_accessor("macro_config")
     if not macro_config:
         # OLSModeratedResultsProbe requires interaction_pval, so provide a default NaN
+        message = "MacroConfig not found in shared_resources. This is essential for regression evaluation."
+        print(message)
         return OLSModeratedResultsProbe(
             data_source=data_source_name,
             status="failure",
-            message="MacroConfig not found in shared_resources. This is essential for regression evaluation.",
+            message=message,
             interaction_pval=float("nan"),
         )
 
@@ -59,10 +138,12 @@ def regression_eval_probe(
     except Exception as e:
         import traceback
 
+        message = f"Failed to compute index predictions for regression_eval_probe: {e}\n{traceback.format_exc()}"
+        print(message)
         return OLSModeratedResultsProbe(
             data_source=data_source_name,
             status="failure",
-            message=f"Failed to compute index predictions for regression_eval_probe: {e}\n{traceback.format_exc()}",
+            message=message,
             interaction_pval=float("nan"),
         )
 
@@ -97,15 +178,16 @@ def regression_eval_probe(
     except Exception as e:
         import traceback
 
+        message = f"Failed to prepare DataFrame for Stata in regression_eval_probe: {e}\n{traceback.format_exc()}"
         return OLSModeratedResultsProbe(
             data_source=data_source_name,
             status="failure",
-            message=f"Failed to prepare DataFrame for Stata in regression_eval_probe: {e}\n{traceback.format_exc()}",
+            message=message,
             interaction_pval=float("nan"),
         )
 
     # --- 4. Prepare Probe-Specific ModeratedRegressionConfig ---
-    df_readin_config: DataFrameReadInConfig = macro_config.data
+    df_readin_config: DataFrameReadInConfig = macro_config.read_config
     mod_reg_config_base: ModeratedRegressionConfig = macro_config.regression
 
     try:
@@ -119,10 +201,12 @@ def regression_eval_probe(
     except Exception as e:
         import traceback
 
+        message = f"Failed to create probe-specific ModeratedRegressionConfig: {e}\\n{traceback.format_exc()}"
+        print(message)
         return OLSModeratedResultsProbe(
             data_source=data_source_name,
             status="failure",
-            message=f"Failed to create probe-specific ModeratedRegressionConfig: {e}\\n{traceback.format_exc()}",
+            message=message,
             interaction_pval=float("nan"),
         )
 

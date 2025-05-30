@@ -1,6 +1,7 @@
 from pydantic import Field, ConfigDict, field_validator
 from .base import ProbeData
 from typing import Dict, Optional
+import math
 
 
 class OLSResultsProbe(ProbeData):
@@ -51,7 +52,7 @@ class OLSModeratedResultsProbe(OLSResultsProbe):
 
     @field_validator("interaction_pval")
     def validate_pval(cls, v: Optional[float]) -> Optional[float]:
-        if v is not None and not (0 <= v <= 1):
+        if v is not None and not (0 <= v <= 1) and not math.isnan(v):
             raise ValueError("p-value must be between 0 and 1")
         return v
 

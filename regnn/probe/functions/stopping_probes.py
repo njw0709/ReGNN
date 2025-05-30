@@ -33,7 +33,7 @@ def pval_early_stopping_probe(
     if not schedule_config.data_sources_to_monitor:
         return EarlyStoppingSignalProbeResult(
             probe_type_name="pval_early_stopping",
-            data_source=DataSource.ALL.value,
+            data_source=DataSource.ALL,
             status="skipped",
             message="No data sources configured for monitoring.",
             should_stop=False,
@@ -44,9 +44,9 @@ def pval_early_stopping_probe(
         return EarlyStoppingSignalProbeResult(
             probe_type_name="pval_early_stopping",
             data_source=(
-                schedule_config.data_sources_to_monitor[0].value
+                schedule_config.data_sources_to_monitor[0]
                 if schedule_config.data_sources_to_monitor
-                else DataSource.ALL.value
+                else DataSource.ALL
             ),
             status="skipped",
             message=f"Patience period not met (current epoch {epoch} < patience {schedule_config.patience}).",
@@ -60,9 +60,9 @@ def pval_early_stopping_probe(
         return EarlyStoppingSignalProbeResult(
             probe_type_name="pval_early_stopping",
             data_source=(
-                schedule_config.data_sources_to_monitor[0].value
+                schedule_config.data_sources_to_monitor[0]
                 if schedule_config.data_sources_to_monitor
-                else DataSource.ALL.value
+                else DataSource.ALL
             ),
             status="failure",
             message="Probe trajectory not found in shared resources.",
@@ -115,7 +115,7 @@ def pval_early_stopping_probe(
     if not joint_evaluation_epochs:
         return EarlyStoppingSignalProbeResult(
             probe_type_name="pval_early_stopping",
-            data_source=DataSource.ALL.value,
+            data_source=DataSource.ALL,
             status="skipped",
             message="No joint evaluation epochs found in history where all monitored data sources have p-values (or none after patience period).",
             should_stop=False,
@@ -125,7 +125,7 @@ def pval_early_stopping_probe(
     if len(joint_evaluation_epochs) < schedule_config.n_sequential_epochs_to_pass:
         return EarlyStoppingSignalProbeResult(
             probe_type_name="pval_early_stopping",
-            data_source=DataSource.ALL.value,
+            data_source=DataSource.ALL,
             status="skipped",
             message=(
                 f"Not enough joint evaluation epochs ({len(joint_evaluation_epochs)}) to check for "
@@ -157,10 +157,10 @@ def pval_early_stopping_probe(
 
             if pval < schedule_config.criterion:
                 details_for_this_epoch_pass.append(
-                    f"{monitored_ds.value}: pval {pval:.4f} < {schedule_config.criterion} at epoch {current_eval_epoch} - PASSED"
+                    f"{monitored_ds}: pval {pval:.4f} < {schedule_config.criterion} at epoch {current_eval_epoch} - PASSED"
                 )
             else:
-                failure_reason_detail = f"Epoch {current_eval_epoch}, {monitored_ds.value}: pval {pval:.4f} >= {schedule_config.criterion} - FAILED."
+                failure_reason_detail = f"Epoch {current_eval_epoch}, {monitored_ds}: pval {pval:.4f} >= {schedule_config.criterion} - FAILED."
                 current_epoch_all_ds_passed = False
                 all_n_recent_passed = False
                 break  # This data source failed, so this epoch fails
@@ -176,13 +176,13 @@ def pval_early_stopping_probe(
     if all_n_recent_passed:
         reason_msg = (
             f"P-value criterion met for the {schedule_config.n_sequential_epochs_to_pass} most recent joint evaluations "
-            f"on {', '.join([ds.value for ds in schedule_config.data_sources_to_monitor])}. "
+            f"on {', '.join([ds for ds in schedule_config.data_sources_to_monitor])}. "
             f"Evaluated epochs: {sorted(epochs_to_check)}. Details: {'; '.join(passed_epochs_details_list)}."
         )
         print(f"EARLY STOPPING SIGNAL: {reason_msg}")
         return EarlyStoppingSignalProbeResult(
             probe_type_name="pval_early_stopping",
-            data_source=DataSource.ALL.value,
+            data_source=DataSource.ALL,
             status="success",
             message="Early stopping criterion met based on N most recent joint evaluations.",
             should_stop=True,
@@ -191,7 +191,7 @@ def pval_early_stopping_probe(
     else:
         return EarlyStoppingSignalProbeResult(
             probe_type_name="pval_early_stopping",
-            data_source=DataSource.ALL.value,
+            data_source=DataSource.ALL,
             status="success",  # Probe ran successfully
             message=(
                 f"Early stopping criterion NOT met for the {schedule_config.n_sequential_epochs_to_pass} most recent joint evaluations. "

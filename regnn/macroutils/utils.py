@@ -15,11 +15,16 @@ from regnn.train import (
     KLDLossConfig,
     ElasticNetRegConfig,
 )
-from .base import DataFrameReadInConfig, ModeratedRegressionConfig
+
 
 # Imports for the new function
-from regnn.probe import ProbeData, ObjectiveProbe, OLSModeratedResultsProbe, L2NormProbe
-from regnn.probe.dataclass.probe_config import DataSource
+from regnn.probe import (
+    ProbeData,
+    ObjectiveProbe,
+    OLSModeratedResultsProbe,
+    L2NormProbe,
+    DataSource,
+)
 
 
 def load_model(
@@ -119,84 +124,6 @@ def setup_loss_and_optimizer(
         weight_decay=0.0,  # Top-level weight_decay is 0 as it's handled per param group
     )
     return loss_func, regularization, optimizer
-
-
-def generate_stata_command(
-    data_readin_config: DataFrameReadInConfig,
-    regression_config: ModeratedRegressionConfig,
-) -> str:
-    """
-    Generate a Stata regression command based on the configuration.
-    Uses the rename_dict from data_readin_config to map internal column names to Stata variable names.
-
-    Returns:
-        str: The complete Stata regression command
-    """
-
-    # Helper function to get the correct variable name
-    def get_var_name(col: str) -> str:
-        # If col is a value in rename_dict, return its key
-        # If col is a key in rename_dict, return the original name
-        # Otherwise return the original name
-        rename_dict = data_readin_config.rename_dict
-        if col in rename_dict.values():
-            # Find the key for this value
-            for key, value in rename_dict.items():
-                if value == col:
-                    return key
-        return col
-
-    # Start with basic regression command
-    cmd_parts = ["regress"]
-
-    # Add outcome and focal predictor with interaction
-    outcome = get_var_name(regression_config.outcome_col)
-    focal = get_var_name(regression_config.focal_predictor)
-
-    # Add outcome and focal predictor with interaction
-    cmd_parts.append(outcome)
-
-    # Add appropriate prefix to focal predictor based on its type
-    if (
-        data_readin_config.binary_cols
-        and regression_config.focal_predictor in data_readin_config.binary_cols
-    ) or (
-        data_readin_config.categorical_cols
-        and regression_config.focal_predictor in data_readin_config.categorical_cols
-    ):
-        cmd_parts.append(f"i.{focal}")
-    else:
-        cmd_parts.append(f"c.{focal}")
-
-    # Add summary index and focal predictor interactions
-    cmd_parts.append(f"c.{focal}#c.{regression_config.index_column_name}")
-
-    # Add linear terms
-    linear_terms = regression_config.controlled_cols
-    if regression_config.control_moderators:
-        linear_terms += regression_config.moderators
-    for col in linear_terms:
-        col_name = get_var_name(col)
-        # Check if the column is binary or categorical in the data config
-        if data_readin_config.binary_cols and col in data_readin_config.binary_cols:
-            cmd_parts.append(f"i.{col_name}")
-        elif (
-            data_readin_config.categorical_cols
-            and col in data_readin_config.categorical_cols
-        ):
-            cmd_parts.append(f"i.{col_name}")
-        elif data_readin_config.ordinal_cols and col in data_readin_config.ordinal_cols:
-            cmd_parts.append(f"i.{col_name}")
-        else:
-            assert col in data_readin_config.continuous_cols
-            cmd_parts.append(f"c.{col_name}")
-
-    # Add survey weights if specified
-    if data_readin_config.survey_weight_col is not None:
-        weight_col = get_var_name(data_readin_config.survey_weight_col)
-        cmd_parts.append(f"[pweight={weight_col}]")
-
-    return " ".join(cmd_parts)
 
 
 def format_epoch_printout(

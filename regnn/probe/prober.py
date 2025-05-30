@@ -130,12 +130,12 @@ class ProbeManager:
                     pass  # Probe handles None dataset/dataloader if it's truly global
                 elif current_dataset is None and current_dataloader is None:
                     print(
-                        f"Warning: No dataset/dataloader for data_source '{ds_enum.value}' for probe '{schedule.probe_type}'. Skipping this data_source for this probe."
+                        f"Warning: No dataset/dataloader for data_source '{ds_enum}' for probe '{schedule.probe_type}'. Skipping this data_source for this probe."
                     )
                     skipped_probe_data = ProbeData(
-                        data_source=ds_enum.value,
+                        data_source=ds_enum,
                         status="skipped",
-                        message=f"Dataset for {ds_enum.value} not provided",
+                        message=f"Dataset for {ds_enum} not provided",
                         probe_type_name=schedule.probe_type,
                     )
                     current_snapshot.add(skipped_probe_data)
@@ -143,7 +143,7 @@ class ProbeManager:
                     continue
 
                 print(
-                    f"Executing probe: {schedule.probe_type} on {ds_enum.value} (Epoch: {epoch}, Iter: {iteration_in_epoch})"
+                    f"Executing probe: {schedule.probe_type} on {ds_enum} (Epoch: {epoch}, Iter: {iteration_in_epoch})"
                 )
                 try:
                     probe_kwargs = {
@@ -153,7 +153,7 @@ class ProbeManager:
                         "global_iteration": global_iteration,
                         "dataset": current_dataset,
                         "dataloader": current_dataloader,
-                        "data_source_name": ds_enum.value,
+                        "data_source_name": ds_enum,
                         "schedule_config": schedule,
                         "frequency_type": frequency_context,
                         "shared_resource_accessor": self.get_shared_resource,
@@ -178,7 +178,7 @@ class ProbeManager:
                                     f"Warning: Probe '{schedule.probe_type}' returned an item not instance of ProbeData: {type(res_item)}. Skipping this item."
                                 )
                                 error_data = ProbeData(
-                                    data_source=ds_enum.value,
+                                    data_source=ds_enum,
                                     status="error",
                                     message=f"Probe {schedule.probe_type} returned non-ProbeData: {type(res_item)}",
                                     probe_type_name=schedule.probe_type,
@@ -187,13 +187,13 @@ class ProbeManager:
                                 collected_probe_data_for_this_call.append(error_data)
                 except Exception as e:
                     print(
-                        f"Error executing probe '{schedule.probe_type}' on data_source '{ds_enum.value}': {e}"
+                        f"Error executing probe '{schedule.probe_type}' on data_source '{ds_enum}': {e}"
                     )
                     import traceback
 
                     traceback.print_exc()
                     error_probe_data = ProbeData(
-                        data_source=ds_enum.value,
+                        data_source=ds_enum,
                         status="failure",
                         message=str(e),
                         probe_type_name=schedule.probe_type,

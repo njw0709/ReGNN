@@ -35,7 +35,7 @@ def objective_probe(
     # Assumes trainer might store data as: (value: float, name: str, breakdown: dict)
     # Default train_data_source_literal to "train"
     train_ds_literal = (
-        "train"  # Could be made configurable via schedule_config.probe_params if needed
+        "TRAIN"  # Could be made configurable via schedule_config.probe_params if needed
     )
     if (
         data_source_name == train_ds_literal
@@ -53,14 +53,28 @@ def objective_probe(
                     and isinstance(obj_name, str)
                     and isinstance(obj_breakdown, dict)
                 ):
-                    return ObjectiveProbe(
-                        objective=float(obj_val),
-                        objective_name=obj_name,
-                        objective_breakdown=obj_breakdown,
-                        data_source=data_source_name,
-                        status="success",
-                        message=f"Used pre-computed objective from shared_resources (key: {precomputed_key}).",
-                    )
+                    # Ensure obj_breakdown values are floats if present
+                    valid_breakdown = True
+                    if obj_breakdown:
+                        for k, v in obj_breakdown.items():
+                            if not isinstance(v, (float, int)):
+                                valid_breakdown = False
+                                print(
+                                    f"Warning: Probe '{schedule_config.probe_type}': Precomputed objective breakdown for key '{precomputed_key}' has non-float value for '{k}'. Recomputing."
+                                )
+                                break
+
+                    if valid_breakdown:
+                        return ObjectiveProbe(
+                            objective=float(obj_val),
+                            objective_name=obj_name,
+                            objective_breakdown=(
+                                obj_breakdown if obj_breakdown else None
+                            ),  # Use None if empty
+                            data_source=data_source_name,
+                            status="success",
+                            message=f"Used pre-computed objective from shared_resources (key: {precomputed_key}).",
+                        )
                 else:
                     print(
                         f"Warning: Probe '{schedule_config.probe_type}': Precomputed objective data for key '{precomputed_key}' has unexpected types. Recomputing."
@@ -87,47 +101,40 @@ def objective_probe(
         return ObjectiveProbe(
             objective=float("nan"),
             objective_name=f"total_loss_on_{data_source_name}",
-            objective_breakdown={"error_setup": str(e)},
+            objective_breakdown=None,  # Set to None on error
             data_source=data_source_name,
             status="failure",
-            message=f"Failed to setup loss functions: {e}\\n{traceback.format_exc()}",
+            message=f"Failed to setup loss functions: {e}\n{traceback.format_exc()}",
         )
 
     model.eval()
     device = training_hp.device if hasattr(training_hp, "device") else "cpu"
 
     loss_options = training_hp.loss_options
-    regnn_model_config = model.config  # This is ReGNNConfig from model internal
 
     try:
         with torch.no_grad():
             for batch_data in dataloader:
-                try:
-                    # Assuming batch_data is an object with .to(device) method
-                    # and attributes .interaction_predictors and .target
-                    # This matches how data is handled in the existing trainer
-                    batch_data_on_device = batch_data.to(device)
-                    features = batch_data_on_device.interaction_predictors
-                    targets = batch_data_on_device.target
-                except AttributeError:
-                    # Fallback for simpler (features, target) tuple from dataloader
-                    if (
-                        isinstance(batch_data, (list, tuple))
-                        and len(batch_data) == 2
-                        and isinstance(batch_data[0], torch.Tensor)
-                        and isinstance(batch_data[1], torch.Tensor)
-                    ):
-                        features, targets = batch_data
-                        features = features.to(device)
-                        targets = targets.to(device)
-                    else:
-                        error_msg = "Batch data from dataloader has an unexpected structure. Expected object with .to, .interaction_predictors, .target OR (tensor, tensor) tuple."
-                        raise ValueError(error_msg)
+                batch_data = {
+                    k: v.to(training_hp.device) if isinstance(v, torch.Tensor) else v
+                    for k, v in batch_data.items()
+                }
 
-                predictions = model(features)
+                model_input_kwargs = {
+                    k: batch_data[k]
+                    for k in ["moderators", "focal_predictor", "controlled_predictors"]
+                }
+                targets = batch_data["outcome"]
+                s_weights = batch_data.get("weights")
+                if model.use_closed_form_linear_weights:
+                    model_input_kwargs["y"] = targets
+                    if s_weights is not None:
+                        model_input_kwargs["s_weights"] = s_weights
+
+                predictions = model(**model_input_kwargs)
 
                 batch_main_loss_tensor = torch.tensor(0.0, device=device)
-                if regnn_model_config.vae and isinstance(loss_options, KLDLossConfig):
+                if model.vae and isinstance(loss_options, KLDLossConfig):
                     output_mu, output_log_var = predictions
                     batch_main_loss_tensor = loss_fn_callable(
                         output_mu, output_log_var, targets, output_mu
@@ -136,7 +143,7 @@ def objective_probe(
                     batch_main_loss_tensor = loss_fn_callable(predictions, targets)
                 else:
                     raise ValueError(
-                        f"Unsupported combination of VAE={regnn_model_config.vae} and loss_options={type(loss_options)}"
+                        f"Unsupported combination of VAE={model.vae} and loss_options={type(loss_options)}"
                     )
 
                 main_loss_agg += batch_main_loss_tensor.item()
@@ -157,6 +164,7 @@ def objective_probe(
             return ObjectiveProbe(
                 objective=float("nan"),
                 objective_name=f"total_loss_on_{data_source_name}",
+                objective_breakdown=None,  # Set to None if skipped
                 data_source=data_source_name,
                 status=current_status,
                 message=status_message,
@@ -172,7 +180,7 @@ def objective_probe(
         }
 
         result = ObjectiveProbe(
-            objective=avg_total_loss,
+            objective=float(avg_total_loss),
             objective_name=f"total_loss_on_{data_source_name}",
             objective_breakdown=breakdown,
             data_source=data_source_name,
@@ -186,13 +194,13 @@ def objective_probe(
 
         current_status = "failure"
         status_message = (
-            f"Error during objective calculation: {e}\\n{traceback.format_exc()}"
+            f"Error during objective calculation: {e}\n{traceback.format_exc()}"
         )
-        # print(status_message) # Optionally print for immediate debugging
+        print(status_message)  # Optionally print for immediate debugging
         return ObjectiveProbe(
             objective=float("nan"),
             objective_name=f"total_loss_on_{data_source_name}",
-            objective_breakdown={"error_calculation": str(e)},
+            objective_breakdown=None,  # Set to None on error
             data_source=data_source_name,
             status=current_status,
             message=status_message,
