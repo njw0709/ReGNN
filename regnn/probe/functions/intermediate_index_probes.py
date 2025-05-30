@@ -3,9 +3,9 @@ import torch
 import numpy as np
 import pandas as pd
 import os
-from typing import Optional, TypeVar, Any, List
+from typing import Optional
 
-from regnn.model import ReGNN  # Actual model import
+from regnn.model import ReGNN
 from regnn.probe.registry import register_probe
 from regnn.probe.dataclass.probe_config import (
     SaveIntermediateIndexProbeScheduleConfig,
@@ -14,8 +14,6 @@ from regnn.probe.dataclass.probe_config import (
 from regnn.probe.dataclass.results import IntermediateIndexSavedProbeResult
 from regnn.data import ReGNNDataset
 from regnn.train import TrainingHyperParams
-
-# TrainingHyperParams = TypeVar("TrainingHyperParams")
 
 
 def compute_index_prediction(
@@ -57,9 +55,9 @@ def save_intermediate_index_probe(
             raise ValueError("Moderators not found in dataset.to_tensor() result.")
 
         idx_pred_np = compute_index_prediction(model, all_moderators_tensor)
-        df_orig = dataset.df_orig.copy()
-        df_orig[schedule_config.index_column_name]
-        df_indices = pd.DataFrame(idx_pred_np)
+        df_indices = pd.DataFrame(
+            idx_pred_np, columns=[schedule_config.index_column_name]
+        )
 
         model_file_base = schedule_config.model_save_name
         file_id_suffix = (
@@ -67,7 +65,11 @@ def save_intermediate_index_probe(
         )
 
         epoch_part = f"_epoch_{epoch + 1}"
+        if kwargs["iteration_in_epoch"] is not None:
+            epoch_part = epoch_part + "_{}".format(kwargs["iteration_in_epoch"])
         if schedule_config.frequency_type == FrequencyType.POST_TRAINING:
+            df_indices = dataset.df_orig.copy()
+            df_indices[schedule_config.index_column_name] = idx_pred_np
             epoch_part = "_final"
 
         indices_filename = f"{model_file_base}{file_id_suffix}{epoch_part}-indices.dta"
@@ -75,7 +77,7 @@ def save_intermediate_index_probe(
         saved_file_path = os.path.join(actual_save_dir, indices_filename)
 
         os.makedirs(actual_save_dir, exist_ok=True)
-        df_indices.to_stata(saved_file_path)
+        df_indices.to_stata(saved_file_path, write_index=False)
 
     except Exception as e:
         import traceback
