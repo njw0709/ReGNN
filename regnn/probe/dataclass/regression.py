@@ -1,7 +1,18 @@
-from pydantic import Field, ConfigDict, field_validator
+from pydantic import Field, ConfigDict, field_validator, BaseModel
 from .base import ProbeData
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Union
 import math
+
+
+class ModeratedRegressionConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
+    focal_predictor: str
+    outcome_col: str
+    controlled_cols: List[str]
+    moderators: Union[List[str], List[List[str]]]
+    control_moderators: bool = Field(True)
+    index_column_name: Union[str, List[str]]
 
 
 class OLSResultsProbe(ProbeData):

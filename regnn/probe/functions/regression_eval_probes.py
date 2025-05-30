@@ -1,21 +1,20 @@
-import pandas as pd
 from typing import Dict, Any, Callable, Optional, TypeVar
+from regnn.train import TrainingHyperParams
 
 from ..registry import register_probe
 from ..dataclass.probe_config import RegressionEvalProbeScheduleConfig
-from ..dataclass.regression import OLSModeratedResultsProbe
+from ..dataclass.regression import OLSModeratedResultsProbe, ModeratedRegressionConfig
 
-from regnn.train import TrainingHyperParams
 
-ModeratedRegressionConfig = TypeVar("ModeratedRegressionConfig")
 MacroConfig = TypeVar("MacroConfig")
 from regnn.eval import init_stata  # For initializing Stata connection
 
 # Corrected import path for local_compute_index_prediction:
 from .intermediate_index_probes import compute_index_prediction
-from ..dataclass.probe_config import (
-    FocalPredictorPreProcessOptions,
-)
+
+# from ..dataclass.probe_config import (
+#     FocalPredictorPreProcessOptions,
+# )
 from regnn.data import ReGNNDataset, DataFrameReadInConfig  # Import ReGNNDataset
 from regnn.model import ReGNN
 
@@ -212,82 +211,32 @@ def regression_eval_probe(
 
     # --- 5. Focal Predictor Processing ---
     if (
-        schedule_config.focal_predictor_process_options
-        and schedule_config.focal_predictor_process_options.threshold
+        schedule_config.focal_predictor_preprocess_options
+        and schedule_config.focal_predictor_preprocess_options.threshold
     ):
-
-        fp_opts: FocalPredictorPreProcessOptions = (
-            schedule_config.focal_predictor_process_options
-        )
         focal_col_name = current_mod_reg_config.focal_predictor
+        assert (
+            model.include_bias_focal_predictor
+        ), f"Warning (regression_eval_probe, thresholding): Model is set to false on 'include_bias_focal_predictor'"
 
-        # Check model and dataset compatibility for this processing step
-        model_has_bias_attrs = hasattr(
-            model, "include_bias_focal_predictor"
-        ) and hasattr(model, "xf_bias")
-        dataset_has_req_attrs = (
-            hasattr(dataset, "config")
-            and hasattr(dataset.config, "focal_predictor")
-            and hasattr(dataset, "mean_std_dict")
-        )
-
-        if not model_has_bias_attrs:
-            print(
-                f"Warning (regression_eval_probe): Model missing 'include_bias_focal_predictor' or 'xf_bias' attributes. Skipping focal predictor thresholding value calculation based on model bias."
-            )
-        if not dataset_has_req_attrs:
-            print(
-                f"Warning (regression_eval_probe): Dataset missing 'config.focal_predictor' or 'mean_std_dict' attributes. Skipping focal predictor thresholding value calculation based on dataset stats."
-            )
-
-        # Calculate thresholded_value for the preprocessor, if model and dataset support it
-        # This logic mirrors regnn/macroutils/evaluator.py
-        # The fp_opts.thresholded_value will be set and used by fp_opts.create_preprocessor()
-        if model_has_bias_attrs and model.include_bias_focal_predictor:
-            if dataset_has_req_attrs and focal_col_name in dataset.mean_std_dict:
+        # Apply the preprocessing to the focal predictor column in df_eval
+        try:
+            # Calculate thresholded_value for the preprocessor, if model and dataset support it
+            # This logic mirrors regnn/macroutils/evaluator.py
+            # The fp_opts.thresholded_value will be set and used by fp_opts.create_preprocessor()
+            if focal_col_name in dataset.mean_std_dict:
                 mean_val, std_val = dataset.mean_std_dict[focal_col_name]
                 # Ensure xf_bias is a scalar tensor before calling .item()
                 model_xf_bias_val = model.xf_bias.cpu().detach().numpy()
                 if model_xf_bias_val.size == 1:
-                    fp_opts.thresholded_value = (
+                    schedule_config.focal_predictor_preprocess_options.thresholded_value = (
                         model_xf_bias_val.item() * std_val + mean_val
                     )
                 else:
-                    print(
-                        f"Warning (regression_eval_probe): model.xf_bias is not a scalar ({model_xf_bias_val.shape}). Using raw bias value if possible, else 0."
-                    )
-                    fp_opts.thresholded_value = (
-                        model_xf_bias_val.item() if model_xf_bias_val.size == 1 else 0.0
-                    )
-            else:
-                # Fallback if focal predictor stats are not found in dataset or dataset incompatible
-                model_xf_bias_val = model.xf_bias.cpu().detach().numpy()
-                fp_opts.thresholded_value = (
-                    model_xf_bias_val.item() if model_xf_bias_val.size == 1 else 0.0
-                )
-                if (
-                    not (
-                        dataset_has_req_attrs
-                        and focal_col_name in dataset.mean_std_dict
-                    )
-                    and dataset_has_req_attrs
-                ):
-                    print(
-                        f"Warning (regression_eval_probe): Stats for focal predictor '{focal_col_name}' not found in dataset.mean_std_dict. Using model's raw xf_bias for thresholding if available."
-                    )
-        elif (
-            model_has_bias_attrs
-        ):  # model does not include_bias_focal_predictor, or condition was false
-            # If not using model bias, threshold_value might be set directly in config or default to 0 in FocalPredictorPreProcessOptions
-            pass  # fp_opts.thresholded_value would use its default or pre-configured value
-
-        # Apply the preprocessing to the focal predictor column in df_eval
-        try:
-            preprocessor = fp_opts.create_preprocessor()
-            if focal_col_name not in df_eval.columns:
-                raise ValueError(
-                    f"Focal predictor column '{focal_col_name}' not found in the evaluation DataFrame."
-                )
+                    raise AssertionError("Bias value is not size 1")
+            preprocessor = (
+                schedule_config.focal_predictor_preprocess_options.create_preprocessor()
+            )
 
             focal_array = df_eval[
                 focal_col_name
@@ -305,30 +254,14 @@ def regression_eval_probe(
             # For now, we let it proceed and the error is logged.
 
     # --- 6. Generate or Get Stata Command ---
-    if schedule_config.regress_cmd:
-        regress_cmd = schedule_config.regress_cmd
-    else:
-        try:
-            regress_cmd = generate_stata_command(
-                df_readin_config, current_mod_reg_config
-            )
-        except Exception as e:
-            import traceback
-
-            return OLSModeratedResultsProbe(
-                data_source=data_source_name,
-                status="failure",
-                message=f"Failed to generate Stata command for regression_eval_probe: {e}\\n{traceback.format_exc()}",
-                interaction_pval=float("nan"),
-            )
 
     # --- 7. Execute Stata Regression & Adapt Results ---
     try:
         stata = init_stata()
-        stata_quietly_flag = schedule_config.probe_params.get("stata_quietly", True)
+        regress_cmd = schedule_config.regress_cmd
 
         stata.pdataframe_to_data(df_eval, force=True)
-        stata.run(regress_cmd, quietly=stata_quietly_flag)
+        stata.run(regress_cmd)
 
         stata_return = stata.get_return()
         stata_ereturns = stata.get_ereturn()
@@ -347,10 +280,13 @@ def regression_eval_probe(
         r_table_matrix = stata_return[
             "r(table)"
         ]  # This should be (num_variables x num_stats)
+
+        print("table:", r_table_matrix)
         r_table_variable_names = stata_return[
             "_rowname"
         ]  # List of variable names as rows in r_table_matrix
         # stata_col_names = stata_return["_colname"] # Should be ["b", "se", "t", "pvalue", "ll", "ul"]
+        print("variable names:", r_table_variable_names)
 
         # Verify expected column indices for b, se, pvalue from _colname or assume standard Stata order
         # Standard order: b (0), se (1), t (2), pvalue (3), ll (4), ul (5)
@@ -381,6 +317,9 @@ def regression_eval_probe(
             p_values_dict[var_name] = r_table_matrix[
                 i, PVAL_IDX
             ]  # Stat for variable i, column PVAL_IDX
+        print("Coefficients:", coefficients)
+        print("std error:", standard_errors)
+        print("pvals: ", p_values_dict)
 
         r_squared = stata_ereturns.get("e(r2)")
         adj_r_squared = stata_ereturns.get("e(r2_a)")
@@ -453,17 +392,12 @@ def regression_eval_probe(
     except Exception as e:
         import traceback
 
+        message = f"Error during Stata execution or result parsing: {e}\\n{traceback.format_exc()}"
+        print(message)
+
         return OLSModeratedResultsProbe(
             data_source=data_source_name,
             status="failure",
-            message=f"Error during Stata execution or result parsing: {e}\\n{traceback.format_exc()}",
+            message=message,
             interaction_pval=float("nan"),
         )
-
-    # Fallback, should not be reached if try/except covers all paths
-    return OLSModeratedResultsProbe(
-        data_source=data_source_name,
-        status="failure",
-        message="Reached unexpected end of regression_eval_probe.",
-        interaction_pval=float("nan"),
-    )

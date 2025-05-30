@@ -1,6 +1,5 @@
-from regnn.data import ReGNNDataset
-from regnn.data import ReGNNDatasetConfig, DataFrameReadInConfig
-from .base import ModeratedRegressionConfig
+from regnn.data import ReGNNDataset, ReGNNDatasetConfig, DataFrameReadInConfig
+from regnn.probe import ModeratedRegressionConfig
 
 
 def read_and_preprocess(

@@ -12,19 +12,9 @@ from regnn.probe import (
     PValEarlyStoppingProbeScheduleConfig,
     FrequencyType,
     ProbeOptions,
+    ModeratedRegressionConfig,
 )
 import warnings
-
-
-class ModeratedRegressionConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=False)
-
-    focal_predictor: str
-    outcome_col: str
-    controlled_cols: List[str]
-    moderators: Union[List[str], List[List[str]]]
-    control_moderators: bool = Field(True)
-    index_column_name: Union[str, List[str]]
 
 
 class MacroConfig(BaseModel):
