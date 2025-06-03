@@ -64,8 +64,7 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
                 raise ValueError(
                     f"Could not convert dtype '{dtype}' to torch.dtype. Original error: {e}"
                 )
-
-        return torch.tensor(np.array([value]), dtype=dtype).to(self.device)
+        return torch.tensor(np.array(value), dtype=dtype).to(self.device)
 
     def _to_numpy(self, value, dtype=None) -> np.ndarray:
         """Convert a value to a numpy array with proper shape."""
@@ -90,12 +89,17 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
                 raise ValueError(
                     f"Invalid dtype '{dtype}' provided. Cannot determine a corresponding NumPy dtype."
                 )
+        return np.array(value).astype(dtype)
 
-        return np.array([value]).astype(dtype)
-
-    def _get_item_value(self, key: str, idx: int, as_tensor: bool = True):
+    def _get_item_value(self, key: str, idx: Union[int, slice], as_tensor: bool = True):
         """Get a single item value, either as tensor or numpy array."""
         value = self.df[key].iloc[idx]
+        if value.ndim == 0:
+            value = [value]
+        if isinstance(idx, slice):
+            value = np.expand_dims(np.array(value), 1)
+        else:
+            value = np.expand_dims(np.array(value), 0)
         return self._to_tensor(value) if as_tensor else self._to_numpy(value)
 
     def _get_moderators(self, idx: int, as_tensor: bool = True):
