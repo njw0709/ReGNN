@@ -41,7 +41,6 @@ def multi_cat_to_one_hot(
 
     # Store original categories for each column before transformation
     categories_dict = {col: df[col].cat.categories for col in multi_cats}
-    print(categories_dict)
     # Get dummies with drop_first=True
     df2 = pd.get_dummies(
         df[multi_cats], columns=multi_cats, dtype=float, drop_first=True

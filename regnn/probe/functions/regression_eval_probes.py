@@ -255,7 +255,6 @@ def regression_eval_probe(
 
     # --- 7. Execute Stata Regression & Adapt Results ---
     try:
-        print("running stata")
         stata = init_stata()
         regress_cmd = schedule_config.regress_cmd
         print(regress_cmd)

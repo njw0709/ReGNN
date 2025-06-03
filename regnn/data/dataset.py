@@ -154,6 +154,15 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
                 setattr(dataset_subset, key, value)
         return dataset_subset
 
+    def dropna(self, inplace: bool = True):
+        df = self.df.dropna()
+        df_orig = self.df_orig.loc[self.df.index]
+        if inplace:
+            self.df = df
+            self.df_orig = df_orig
+        else:
+            return df, df_orig
+
     def to_numpy(self, dtype=np.float32):
         if isinstance(self.config.moderators[0], str):
             item_dict = {

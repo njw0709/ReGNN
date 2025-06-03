@@ -283,7 +283,6 @@ class BaseDataset:
     def dropna(self, inplace: bool = True):
         if inplace:
             self.df = self.df.dropna()
-            print("after dropna", self.df.columns)
         else:
             return self.df.dropna()
 
