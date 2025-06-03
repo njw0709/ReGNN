@@ -42,12 +42,55 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
         """Convert a value to a tensor with proper shape."""
         if dtype is None:
             dtype = self.dtype
+
+        if not isinstance(dtype, torch.dtype):
+            try:
+                # np.dtype() is used to ensure 'dtype' is a valid numpy dtype identifier
+                # (e.g., np.float32, 'float32', etc.) before creating a dummy array.
+                np_dtype_obj = np.dtype(dtype)
+                # Create a dummy NumPy array with that dtype, then convert to a tensor
+                # to obtain the corresponding torch.dtype.
+                dummy_np_array = np.array([], dtype=np_dtype_obj)
+                dtype = torch.from_numpy(dummy_np_array).dtype
+            except TypeError:
+                # This typically occurs if np.dtype(dtype) fails because 'dtype' is not
+                # a recognizable format (e.g., invalid string).
+                raise ValueError(
+                    f"Invalid dtype '{dtype}' provided. Cannot determine a corresponding NumPy dtype "
+                    f"for conversion to torch.dtype."
+                )
+            except Exception as e:
+                # Catch any other unexpected errors during the conversion process.
+                raise ValueError(
+                    f"Could not convert dtype '{dtype}' to torch.dtype. Original error: {e}"
+                )
+
         return torch.tensor(np.array([value]), dtype=dtype).to(self.device)
 
     def _to_numpy(self, value, dtype=None) -> np.ndarray:
         """Convert a value to a numpy array with proper shape."""
         if dtype is None:
             dtype = self.dtype
+
+        if isinstance(dtype, torch.dtype):
+            try:
+                # Convert torch.dtype to numpy.dtype
+                # Create a dummy tensor, convert to numpy, and get its dtype
+                dummy_tensor = torch.tensor([], dtype=dtype)
+                dtype = dummy_tensor.numpy().dtype
+            except Exception as e:
+                raise ValueError(
+                    f"Could not convert torch.dtype '{dtype}' to numpy.dtype. Original error: {e}"
+                )
+        elif not isinstance(dtype, np.dtype):
+            try:
+                # Attempt to interpret as a numpy dtype specifier (e.g., string or type object)
+                dtype = np.dtype(dtype)
+            except TypeError:
+                raise ValueError(
+                    f"Invalid dtype '{dtype}' provided. Cannot determine a corresponding NumPy dtype."
+                )
+
         return np.array([value]).astype(dtype)
 
     def _get_item_value(self, key: str, idx: int, as_tensor: bool = True):
