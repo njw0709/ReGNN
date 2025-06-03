@@ -39,7 +39,9 @@ def read_and_preprocess(
     )
 
     # preprocess data
+    print("pre process", regnn_dataset.config.moderators)
     regnn_dataset.preprocess(inplace=True)
+    print("post process", regnn_dataset.config.moderators)
     regnn_dataset.dropna(inplace=True)
 
     return regnn_dataset

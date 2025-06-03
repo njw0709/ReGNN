@@ -13,7 +13,7 @@ def binary_to_one_hot(
             col = df[bc].astype("category")
         else:
             col = df[bc]
-        df[bc] = col
+        df[bc] = col.cat.codes
     return df, binary_cats
 
 
@@ -37,13 +37,16 @@ def multi_cat_to_one_hot(
     df: pd.DataFrame, multi_cats: Optional[Sequence[str]] = None, dtype: str = "float"
 ) -> Tuple[pd.DataFrame, Dict[str, Sequence[str]]]:
     if multi_cats is None:
-        return df
+        return df, {}
+
     # Store original categories for each column before transformation
     categories_dict = {col: df[col].cat.categories for col in multi_cats}
+    print(categories_dict)
     # Get dummies with drop_first=True
     df2 = pd.get_dummies(
         df[multi_cats], columns=multi_cats, dtype=float, drop_first=True
     )
+
     if dtype == "category":
         for c in df2.columns:
             df2[c] = df2[c].astype(dtype)

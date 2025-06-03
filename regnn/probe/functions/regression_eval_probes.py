@@ -255,8 +255,10 @@ def regression_eval_probe(
 
     # --- 7. Execute Stata Regression & Adapt Results ---
     try:
+        print("running stata")
         stata = init_stata()
         regress_cmd = schedule_config.regress_cmd
+        print(regress_cmd)
 
         stata.pdataframe_to_data(df_eval, force=True)
         stata.run(regress_cmd)

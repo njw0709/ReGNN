@@ -145,7 +145,7 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
             dtype=self.dtype,
         )
         # preprocess
-        dataset_subset.preprocess()
+        dataset_subset.df = self.df.iloc[indices]
 
         # set extra attributes
         all_attrs_new = list(dataset_subset.__dict__.keys())

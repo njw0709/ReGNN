@@ -10,7 +10,6 @@ from regnn.probe import Trajectory
 from regnn.probe.prober import ProbeManager
 from regnn.probe.registry import PROBE_REGISTRY
 from regnn.probe.dataclass.probe_config import FrequencyType, DataSource
-from regnn.probe.dataclass.base import ProbeData
 from regnn.probe.dataclass.results import EarlyStoppingSignalProbeResult
 
 from .base import MacroConfig
@@ -47,7 +46,6 @@ def train(
         train_ratio=training_hp.train_test_split_ratio,
         seed=training_hp.train_test_split_seed,
     )
-
     train_dataset = all_dataset.get_subset(train_indices)
     test_dataset = (
         all_dataset.get_subset(test_indices) if test_indices is not None else None
@@ -161,6 +159,7 @@ def train(
                 k: batch_data[k]
                 for k in ["moderators", "focal_predictor", "controlled_predictors"]
             }
+            # targets = torch.squeeze(batch_data["outcome"], -1)
             targets = batch_data["outcome"]
             s_weights = batch_data.get("weights")
             if regnn_model_cfg.use_closed_form_linear_weights:

@@ -488,13 +488,15 @@ class ReGNN(nn.Module):
             assert y is not None
         # shapes: moderators: (batch, 1, n); focal_predictor: (batch, 1, 1);
         # threshold focal predictor if indicated.
+
+        if focal_predictor.ndim == 2:
+            focal_predictor = torch.unsqueeze(focal_predictor, 1)
+
         if self.include_bias_focal_predictor:
             focal_predictor = torch.maximum(
                 torch.tensor([[0.0]], device=self.device),
-                (torch.unsqueeze(focal_predictor, 1) - torch.abs(self.xf_bias)),
+                (focal_predictor - torch.abs(self.xf_bias)),
             )
-        else:
-            focal_predictor = torch.unsqueeze(focal_predictor, 1)
 
         # get linear term variables
         all_linear_vars = self._get_linear_term_variables(
@@ -564,8 +566,9 @@ class ReGNN(nn.Module):
                 sqrt_s_weights = torch.sqrt(w)
                 X_full = X_full * sqrt_s_weights
                 y = y * sqrt_s_weights
+            y = torch.squeeze(y, -1)
             weights = torch.linalg.pinv(X_full) @ y
-            outcome = X_full @ weights
+            outcome = torch.unsqueeze(X_full @ weights, -1)
 
         if self.vae:
             if not self.training:

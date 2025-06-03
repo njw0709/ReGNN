@@ -173,10 +173,6 @@ class DataFrameReadInConfig(BaseModel):
         if file_ext in [".pkl", ".pickle"] and self.read_cols:
             df = df[self.read_cols]
 
-        # Convert columns to appropriate types
-        # for col in self.categorical_cols + self.binary_cols + self.ordinal_cols:
-        #     df[col] = df[col].astype("category")
-
         return df
 
     @computed_field
@@ -287,6 +283,7 @@ class BaseDataset:
     def dropna(self, inplace: bool = True):
         if inplace:
             self.df = self.df.dropna()
+            print("after dropna", self.df.columns)
         else:
             return self.df.dropna()
 
