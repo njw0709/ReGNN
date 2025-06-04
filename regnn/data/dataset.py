@@ -29,7 +29,16 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
         self, df: pd.DataFrame, df_dtypes: Dict[str, str], rename_dict: Dict[str, str]
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         df_orig = df.copy()
-        df = df.dropna().reset_index(drop=True).rename(columns=rename_dict)
+
+        # Get indices of non-NaN rows
+        non_nan_idx = df.dropna().index
+
+        # Drop NaN rows from both dataframes using the same indices
+        df = df.loc[non_nan_idx].reset_index(drop=True)
+        df_orig = df_orig.loc[non_nan_idx].reset_index(drop=True)
+
+        # Rename columns in df (not df_orig)
+        df = df.rename(columns=rename_dict)
 
         # get binary and multi category columns
         for dtype, c in df_dtypes.items():
@@ -155,8 +164,13 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
         return dataset_subset
 
     def dropna(self, inplace: bool = True):
-        df = self.df.dropna()
-        df_orig = self.df_orig.loc[self.df.index]
+        # Get indices of non-NaN rows
+        non_nan_idx = self.df.dropna().index
+
+        # Drop NaN rows from both dataframes using the same indices
+        df = self.df.loc[non_nan_idx].reset_index(drop=True)
+        df_orig = self.df_orig.loc[non_nan_idx].reset_index(drop=True)
+
         if inplace:
             self.df = df
             self.df_orig = df_orig

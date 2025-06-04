@@ -149,7 +149,6 @@ def regression_eval_probe(
         df_eval = (
             dataset.df_orig.copy()
         )  # Use a copy to avoid modifying the original dataset's df
-
         # Ensure idx_pred_np aligns with df_eval's index if it's a 1D array
         # Flatten predictions to 1D array
         if idx_pred_np.ndim == 2 and idx_pred_np.shape[1] == 1:

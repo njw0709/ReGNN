@@ -50,6 +50,8 @@ def train(
     test_dataset = (
         all_dataset.get_subset(test_indices) if test_indices is not None else None
     )
+    print("train set: ", train_dataset)
+    print("test set: ", test_dataset)
 
     # SVD matrix computation remains the same, using train_dataset.config and regnn_model_cfg
     if regnn_model_cfg.nn_config.svd.enabled:
