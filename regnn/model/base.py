@@ -118,6 +118,7 @@ class ReGNNConfig(BaseModel):
             "output_mu_var",
             "ensemble",
             "svd",
+            "n_ensemble",
         }
 
         # Split kwargs between nn_config and main config

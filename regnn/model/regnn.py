@@ -586,7 +586,10 @@ class ReGNN(nn.Module):
                 S_inv = torch.where(S > threshold, 1.0 / (S + eps), torch.zeros_like(S))
                 weights = (Vh.t() * S_inv.unsqueeze(-1)) @ (U.t() @ y)
 
-            outcome = torch.unsqueeze(X_full @ weights, -1).unsqueeze(-1)
+            # Ensure outcome has shape [batch, 1, 1] regardless of s_weights
+            outcome = (X_full @ weights).view(
+                -1, 1, 1
+            )  # Explicitly reshape to [batch, 1, 1]
 
         if self.vae:
             if not self.training:
