@@ -555,20 +555,38 @@ class ReGNN(nn.Module):
             outcome = (
                 linear_terms + focal_predictor_main_effect + predicted_interaction_term
             )
-            # Reshape outcome to match expected target shape [batch_size, 1]
-            outcome = outcome.squeeze(-1)
+
         else:
             X_full = torch.cat(
                 [all_linear_vars, predicted_index * focal_predictor], dim=2
             )  # shape: [batch, 1, n_terms]
-            X_full = X_full.squeeze(1)  # shape: [batch, n_terms]
-            if s_weights:
-                sqrt_s_weights = torch.sqrt(w)
-                X_full = X_full * sqrt_s_weights
+            X_full = X_full.reshape(X_full.size(0), -1)  # shape: [batch, n_terms]
+            if s_weights is not None:
+                sqrt_s_weights = torch.sqrt(s_weights).squeeze(-1)  # shape: [batch]
+                X_full = X_full * sqrt_s_weights  # shape: [batch, n_terms]
+                y = y.squeeze(-1)
                 y = y * sqrt_s_weights
             y = torch.squeeze(y, -1)
-            weights = torch.linalg.pinv(X_full) @ y
-            outcome = torch.unsqueeze(X_full @ weights, -1)
+
+            # Add small ridge regularization for numerical stability
+            eps = 1e-6
+            n = X_full.size(1)
+            XtX = X_full.t() @ X_full + eps * torch.eye(n, device=X_full.device)
+            Xty = X_full.t() @ y
+
+            # Try Cholesky first (faster and more stable for well-conditioned matrices)
+            try:
+                L = torch.linalg.cholesky(XtX)
+                weights = torch.cholesky_solve(Xty.unsqueeze(-1), L).squeeze(-1)
+            except:
+                # Fallback to SVD with explicit conditioning threshold
+                U, S, Vh = torch.linalg.svd(X_full, full_matrices=False)
+                # Filter small singular values
+                threshold = eps * S.max()
+                S_inv = torch.where(S > threshold, 1.0 / (S + eps), torch.zeros_like(S))
+                weights = (Vh.t() * S_inv.unsqueeze(-1)) @ (U.t() @ y)
+
+            outcome = torch.unsqueeze(X_full @ weights, -1).unsqueeze(-1)
 
         if self.vae:
             if not self.training:

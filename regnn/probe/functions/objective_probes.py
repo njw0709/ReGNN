@@ -34,9 +34,8 @@ def objective_probe(
     # Attempt to retrieve pre-computed training objective for epoch-end evaluation
     # Assumes trainer might store data as: (value: float, name: str, breakdown: dict)
     # Default train_data_source_literal to "train"
-    train_ds_literal = (
-        "TRAIN"  # Could be made configurable via schedule_config.probe_params if needed
-    )
+    train_ds_literal = "TRAIN"
+
     if (
         data_source_name == train_ds_literal
         and frequency_type == FrequencyType.EPOCH
@@ -145,6 +144,31 @@ def objective_probe(
                     raise ValueError(
                         f"Unsupported combination of VAE={model.vae} and loss_options={type(loss_options)}"
                     )
+                if s_weights is not None:
+                    if (
+                        batch_main_loss_tensor.ndim > 0
+                        and batch_main_loss_tensor.shape[0] == s_weights.shape[0]
+                    ):
+                        batch_main_loss_tensor = (
+                            batch_main_loss_tensor * s_weights
+                        ).sum() / s_weights.sum()
+                    elif batch_main_loss_tensor.ndim == 0:  # If loss is already scalar
+                        pass  # Assuming scalar loss doesn't need further weighting here if already handled or not applicable
+                    else:
+                        # This case might require broadcasting or careful handling
+                        # For now, default to simple mean if shapes don't align for direct weighting as above
+                        print(
+                            f"Warning: Survey weight application mismatch. Loss dim: {total_batch_loss.ndim}, S_weights dim: {s_weights.ndim}. Using unweighted mean."
+                        )
+                        batch_main_loss_tensor = (
+                            batch_main_loss_tensor.mean()
+                            if batch_main_loss_tensor.ndim > 0
+                            else batch_main_loss_tensor
+                        )
+                elif (
+                    batch_main_loss_tensor.ndim > 0
+                ):  # Default mean reduction if not using survey weights and loss is not scalar
+                    batch_main_loss_tensor = batch_main_loss_tensor.mean()
 
                 main_loss_agg += batch_main_loss_tensor.item()
 

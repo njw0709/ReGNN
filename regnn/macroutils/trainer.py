@@ -190,7 +190,6 @@ def train(
                 # Ensure s_weights is 1D and matches batch_loss_main's batch dimension if batch_loss_main is not scalar
                 if (
                     total_batch_loss.ndim > 0
-                    and s_weights.ndim == 1
                     and total_batch_loss.shape[0] == s_weights.shape[0]
                 ):
                     total_batch_loss = (

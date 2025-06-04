@@ -161,9 +161,14 @@ class DataFrameReadInConfig(BaseModel):
         # Special handling for read_cols parameter based on file type
         kwargs = {}
         if self.read_cols:
-            if file_ext in [".csv", ".xlsx", ".xls", ".parquet", ".feather"]:
+            if file_ext in [
+                ".csv",
+                ".xlsx",
+                ".xls",
+                ".parquet",
+            ]:
                 kwargs["usecols"] = self.read_cols
-            elif file_ext == ".dta":
+            elif file_ext in [".dta", ".feather"]:
                 kwargs["columns"] = self.read_cols
             # For pickle files, we'll read all columns and filter after
 
@@ -213,7 +218,7 @@ class DataFrameReadInConfig(BaseModel):
             steps.append(
                 PreprocessStep(
                     columns=[self.survey_weight_col],
-                    function=standardize_cols,
+                    function=map_to_zero_one,
                 )
             )
 
