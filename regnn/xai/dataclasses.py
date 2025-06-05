@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 from numpydantic import NDArray, Shape
-from typing import Literal, Dict, List, Optional, Any
+from typing import Literal, Dict, List, Optional, Any, Tuple, Union
 import numpy as np
 import pandas as pd
 from .utils import smart_number_format
@@ -43,15 +43,17 @@ class Feature(BaseModel):
                 data_1d = data_1d.astype(bool)
             unique, counts = np.unique(data_1d, return_counts=True)
             proportions = counts / len(data_1d)
-            return "Prop: {}".format(
-                dict(zip(unique, [smart_number_format(p) for p in proportions]))
+            return "\n".join(
+                f"{val}: {smart_number_format(p)}"
+                for val, p in zip(unique, proportions)
             )
 
         elif self.dtype == "categorical":
             unique, counts = np.unique(data_1d, return_counts=True)
             proportions = counts / len(data_1d)
-            return "Prop: {}".format(
-                dict(zip(unique, [smart_number_format(p) for p in proportions]))
+            return "\n".join(
+                f"{val}: {smart_number_format(p)}"
+                for val, p in zip(unique, proportions)
             )
 
         else:
@@ -130,6 +132,7 @@ class Cluster(BaseModel):
         binary_cols: Optional[List[str]] = None,
         ordinal_cols: Optional[List[str]] = None,
         categorical_cols: Optional[List[str]] = None,
+        name: Optional[str] = None,
     ) -> "Cluster":
         """Create a Cluster instance from a pandas DataFrame.
 
@@ -170,22 +173,20 @@ class Cluster(BaseModel):
         features = {}
 
         # Add continuous features
-        for col in continuous_cols:
-            features[col] = Feature(data=df[col].to_numpy(), dtype="continuous")
+        for col in df.columns:
+            if col in continuous_cols:
+                dtype = "continuous"
+            elif col in binary_cols:
+                dtype = "binary"
+            elif col in ordinal_cols:
+                dtype = "ordinal"
+            elif col in categorical_cols:
+                dtype = "categorical"
+            else:
+                continue
+            features[col] = Feature(data=df[col].to_numpy(), dtype=dtype)
 
-        # Add binary features
-        for col in binary_cols:
-            features[col] = Feature(data=df[col].to_numpy(), dtype="binary")
-
-        # Add ordinal features
-        for col in ordinal_cols:
-            features[col] = Feature(data=df[col].to_numpy(), dtype="ordinal")
-
-        # Add categorical features
-        for col in categorical_cols:
-            features[col] = Feature(data=df[col].to_numpy(), dtype="categorical")
-
-        return cls(features=features)
+        return cls(features=features, name=name)
 
     def compute_summary(self) -> Dict[str, str]:
         """Compute summary statistics for all features in the cluster.
@@ -197,7 +198,9 @@ class Cluster(BaseModel):
             name: feature.compute_summary() for name, feature in self.features.items()
         }
 
-    def test_diff(self, other: "Cluster") -> Dict[str, tuple[float, str]]:
+    def test_diff(
+        self, other: "Cluster", as_numpy: bool = False
+    ) -> Union[Dict[str, tuple[float, str]], Tuple[List, np.ndarray]]:
         """Test if the distributions of features in this cluster are different from another cluster.
 
         Args:
@@ -215,7 +218,15 @@ class Cluster(BaseModel):
                 f"Got {set(self.features.keys())} vs {set(other.features.keys())}"
             )
 
-        return {
-            name: self.features[name].test_diff(other.features[name])
-            for name in self.features.keys()
-        }
+        if as_numpy:
+            return list(self.features.keys()), np.array(
+                [
+                    self.features[name].test_diff(other.features[name])[0]
+                    for name in self.features.keys()
+                ]
+            )
+        else:
+            return {
+                name: self.features[name].test_diff(other.features[name])
+                for name in self.features.keys()
+            }

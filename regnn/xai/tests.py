@@ -1,7 +1,9 @@
 import pandas as pd
 from scipy.stats import chisquare
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Callable
+from tqdm import tqdm
+import shap
 
 
 def categorical_test(
@@ -71,3 +73,42 @@ def categorical_test(
         return chi2, p_val
     except Exception as e:
         raise ValueError(f"Error in chi-square test: {str(e)}")
+
+
+def bootstrap_shap(
+    model_predict: Callable[[np.ndarray], np.ndarray],
+    X_cluster: np.ndarray,
+    X_background: np.ndarray,
+    num_bootstraps: int = 100,
+    verbose: bool = True,
+) -> np.ndarray:
+    """
+    Bootstrap SHAP values for all samples in a cluster.
+
+    Returns:
+        shap_values_all: (n_bootstraps, n_samples, n_features) full array
+    """
+    if X_cluster.ndim == 1:
+        X_cluster = X_cluster[np.newaxis, :]
+    assert X_cluster.ndim == 2
+    assert X_background.ndim == 2
+    n_samples, n_features = X_cluster.shape
+    shap_values_all = np.zeros((num_bootstraps, n_samples, n_features))
+
+    outer_iter = tqdm(range(num_bootstraps)) if verbose else range(num_bootstraps)
+
+    for b in outer_iter:
+        # Sample background with replacement
+        idx = np.random.choice(
+            X_background.shape[0], size=X_background.shape[0], replace=True
+        )
+        background_sample = X_background[idx]
+
+        # SHAP explainer for this bootstrap
+        explainer = shap.KernelExplainer(model_predict, background_sample)
+
+        # Compute SHAP for all samples in cluster
+        shap_vals = explainer.shap_values(X_cluster, silent=True)
+        shap_values_all[b] = shap_vals.squeeze()  # shape: (n_samples, n_features)
+
+    return shap_values_all
