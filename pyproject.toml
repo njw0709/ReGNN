@@ -22,6 +22,7 @@ dependencies = [
     "jupyter>=1.1.1",
     "lime>=0.2.0.1",
     "pyarrow>=20.0.0",
+    "numpydantic>=1.6.9",
 ]
 
 [build-system]
