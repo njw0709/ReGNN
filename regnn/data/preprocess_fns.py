@@ -18,14 +18,15 @@ def binary_to_one_hot(
 
 
 def _reverse_binary_to_one_hot(
-    df: pd.DataFrame, binary_cats: Optional[Sequence[str]] = None
+    df: pd.DataFrame, binary_cats: Optional[Sequence[str]] = None, **kwargs
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
     if binary_cats is None:
         return df
     for bc in binary_cats:
         # Since we used cat.codes, we need to map back to original categories
         # This assumes the original categories were 0 and 1
-        df[bc] = df[bc].map({0: False, 1: True}).astype("category")
+        if bc in df.columns:
+            df[bc] = df[bc].map({0: False, 1: True}).astype("category")
     return df, binary_cats
 
 
@@ -59,6 +60,7 @@ def _reverse_multi_cat_to_one_hot(
     df: pd.DataFrame,
     multi_cats: Optional[Sequence[str]] = None,
     category_map: Dict[str, Sequence[str]] = None,
+    **kwargs,
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
     if multi_cats is None:
         return df
@@ -120,6 +122,7 @@ def _reverse_standardize_cols(
     df: pd.DataFrame,
     columns: Optional[Sequence[str]] = None,
     mean_std_dict: Dict[str, Tuple[float, float]] = None,
+    **kwargs,
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
     if columns is None:
         return df
@@ -128,7 +131,7 @@ def _reverse_standardize_cols(
             "mean std dictionary must be provided to reverse standardization!!!"
         )
     for c in columns:
-        if c in mean_std_dict and df[c].dtype != "category":
+        if c in mean_std_dict and c in df.columns and df[c].dtype != "category":
             mean, std = mean_std_dict[c]
             df[c] = (df[c] * std) + mean
     return df, columns
@@ -153,13 +156,14 @@ def convert_categorical_to_ordinal(
 
 
 def _reverse_convert_categorical_to_ordinal(
-    df: pd.DataFrame, ordinal_cols: Optional[Sequence[str]] = None
+    df: pd.DataFrame, ordinal_cols: Optional[Sequence[str]] = None, **kwargs
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
     if ordinal_cols is None:
         return df
     for c in ordinal_cols:
-        # Convert back to categorical type
-        df[c] = df[c].astype("category")
+        if c in df.columns:
+            # Convert back to categorical type
+            df[c] = df[c].astype("category")
     return df, ordinal_cols
 
 
@@ -188,13 +192,14 @@ def _reverse_map_to_zero_one(
     df: pd.DataFrame,
     cols: Optional[Sequence[str]] = None,
     min_max_dict: Dict[str, Tuple[float, float]] = None,
+    **kwargs,
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
     if cols is None:
         cols = df.columns
     if min_max_dict is None:
         min_max_dict = {}
     for c in cols:
-        if c in min_max_dict:
+        if c in min_max_dict and c in df.columns:
             col_min, col_max = min_max_dict[c]
             df[c] = (df[c] * (col_max - col_min)) + col_min
     return df, min_max_dict
