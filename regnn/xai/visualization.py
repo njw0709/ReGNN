@@ -197,7 +197,8 @@ def shap_importance_plot_with_uncertainty(
 
     ax.axvline(0, color="gray", linestyle="--")
     ax.grid(True, linestyle="--", which="major")
-    ax.set_yticks(range(n_features), feature_labels[::-1])
+    ax.set_yticks(range(-2, n_features), ["", ""] + feature_labels[::-1])
     ax.set_xlabel("SHAP value (mean ± 95% CI)")
     ax.set_title("Bootstrapped SHAP")
+    ax.set_ylim(-1.5, n_features)
     return ax
