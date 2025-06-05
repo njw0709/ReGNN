@@ -1,6 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from numpydantic import NDArray, Shape
-from typing import Union, Literal, Dict, List, Optional
+from typing import Literal, Dict, List, Optional, Any
 import numpy as np
 import pandas as pd
 from .utils import smart_number_format
@@ -14,8 +14,16 @@ from scipy.stats import mannwhitneyu
 class Feature(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    data: NDArray[Union[Shape["n"], Shape["n, 1"], Shape["1, n"]]]
+    data: NDArray[Shape["* x"], Any]
     dtype: Literal["continuous", "binary", "categorical", "ordinal"]
+
+    @field_validator("data")
+    def ensure_flat_shape(cls, v: np.ndarray):
+        if v.ndim == 1:
+            return v
+        elif v.ndim == 2 and 1 in v.shape:
+            return v.flatten()
+        raise ValueError(f"Expected 1D shape, got {v.shape}")
 
     def compute_summary(self) -> str:
         """Compute summary statistics based on the dtype of the feature.
@@ -23,9 +31,7 @@ class Feature(BaseModel):
         Returns:
             str: A formatted string containing relevant summary statistics
         """
-        # Ensure data is 1D for easier computation
-        data_1d = self.data.reshape(-1)
-
+        data_1d = self.data
         if self.dtype == "continuous" or self.dtype == "ordinal":
             return "Mean: {}\nStd: {}".format(
                 smart_number_format(np.mean(data_1d)),
@@ -98,7 +104,7 @@ class Feature(BaseModel):
         elif self.dtype == "categorical":
             # For categorical, use chi-square test
             test_result = categorical_test(data_1d, other_1d)
-            return test_result.pvalue, "chi-square test"
+            return test_result[1], "chi-square test"
 
         else:
             raise TypeError("dtype is not what is expected.")
@@ -112,6 +118,7 @@ class Cluster(BaseModel):
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+    name: Optional[str] = None
 
     features: Dict[str, Feature]
 
