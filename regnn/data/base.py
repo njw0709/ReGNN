@@ -170,6 +170,8 @@ class DataFrameReadInConfig(BaseModel):
                 kwargs["usecols"] = self.read_cols
             elif file_ext in [".dta", ".feather"]:
                 kwargs["columns"] = self.read_cols
+            if file_ext == ".dta":
+                kwargs["convert_categoricals"] = False
             # For pickle files, we'll read all columns and filter after
 
         df = read_func(self.data_path, **kwargs)
