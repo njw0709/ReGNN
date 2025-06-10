@@ -1,6 +1,6 @@
-from typing import Literal, Optional, Any, List
+from typing import Literal, Optional, Any, List, Union
 from pydantic import BaseModel, Field, ConfigDict, computed_field
-from .probe_config import AllProbeScheduleConfigs
+from .probe_config import AllProbeScheduleConfigs, DataSource
 
 
 class ProbeData(BaseModel):
@@ -11,7 +11,7 @@ class ProbeData(BaseModel):
         from_attributes=True,  # Allow conversion from objects with attributes
     )
 
-    data_source: Literal["TRAIN", "TEST", "VALIDATE", "ALL", "NONE"] = Field(
+    data_source: Union[DataSource, Literal["NONE"]] = Field(
         ...,
         description="Which data source has been used for computing the probe data. Must be one of: train, test, validate, all",
     )

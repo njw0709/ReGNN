@@ -111,7 +111,7 @@ class ProbeManager:
                     f"Warning: Probe type '{schedule.probe_type}' not found in registry. Skipping."
                 )
                 error_probe_data = ProbeData(
-                    data_source=DataSource.ALL.value,
+                    data_source=DataSource.ALL,
                     status="error",
                     message=f"Probe type '{schedule.probe_type}' not found",
                     probe_type_name="unknown_probe_error",

@@ -8,12 +8,13 @@ from regnn.probe import (
     VarianceInflationFactorProbe,
 )
 from .utils import init_stata
+from regnn.probe import DataSource
 
 
 def OLS_stata(
     df: pd.DataFrame,
     regress_cmd: str,
-    data_source: str = "validate",
+    data_source: DataSource = DataSource.TEST,
     quietly: bool = False,
     df_already_moved: bool = False,
 ) -> OLSModeratedResultsProbe:
@@ -44,7 +45,7 @@ def OLS_stata(
 def OLS_statsmodel(
     df: pd.DataFrame,
     regress_cmd: str,
-    data_source: str = "validate",
+    data_source: DataSource = DataSource.TEST,
 ) -> OLSModeratedResultsProbe:
     """Python statsmodels version of OLS regression"""
     # Parse Stata regression command to get variables
@@ -83,7 +84,7 @@ def OLS_statsmodel(
 
 def VIF_stata(
     df: pd.DataFrame,
-    data_source: str = "test",
+    data_source: DataSource = DataSource.TEST,
     quietly: bool = False,
     df_already_moved: bool = False,
 ) -> VarianceInflationFactorProbe:
@@ -107,7 +108,7 @@ def VIF_stata(
 
 def VIF_statsmodel(
     df: pd.DataFrame,
-    data_source: str = "test",
+    data_source: DataSource = DataSource.TEST,
 ) -> VarianceInflationFactorProbe:
     """Calculate Variance Inflation Factor using statsmodels"""
     # Add constant to the dataframe for VIF calculation
