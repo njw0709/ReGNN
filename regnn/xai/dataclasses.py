@@ -218,15 +218,16 @@ class Cluster(BaseModel):
                 f"Got {set(self.features.keys())} vs {set(other.features.keys())}"
             )
 
+        test_results = {}
+        for name in self.features.keys():
+            try:
+                test_results[name] = self.features[name].test_diff(other.features[name])
+            except Exception as e:
+                print(e, "skipping test")
+                test_results[name] = (np.nan, "test failed")
+
         if as_numpy:
-            return list(self.features.keys()), np.array(
-                [
-                    self.features[name].test_diff(other.features[name])[0]
-                    for name in self.features.keys()
-                ]
-            )
+            test_results = [test_results[name][0] for name in self.features.keys()]
+            return list(self.features.keys()), np.array(test_results)
         else:
-            return {
-                name: self.features[name].test_diff(other.features[name])
-                for name in self.features.keys()
-            }
+            return test_results

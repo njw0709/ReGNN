@@ -57,7 +57,7 @@ def heatmap(
     # Handle discrete colorbar if bounds are provided
     if discrete_bounds is not None:
         # Create boundaries including the minimum value
-        bounds = [data.min()] + discrete_bounds
+        bounds = [np.nanmin(data)] + discrete_bounds
         norm = BoundaryNorm(bounds, plt.cm.YlOrRd.N)
         kwargs["norm"] = norm
         kwargs["cmap"] = plt.cm.YlOrRd
