@@ -127,14 +127,18 @@ def setup_loss_and_optimizer(
 
 
 def format_epoch_printout(
-    base_printout: str, epoch_probe_results: List[ProbeData]
+    base_printout: str,
+    current_epoch: int,
+    probe_manager: Optional[Any] = None,
 ) -> str:
     """
-    Formats and appends relevant information from epoch-level probe results to a base printout string.
+    Formats and appends relevant information from probe results to a base printout string.
+    Extracts both epoch-level and iteration-level results from the probe manager's trajectory.
 
     Args:
         base_printout: The initial printout string (e.g., epoch number and training loss).
-        epoch_probe_results: A list of ProbeData objects from the current epoch's probes.
+        current_epoch: The current epoch number (0-indexed).
+        probe_manager: Optional ProbeManager to access probe results from trajectory.
 
     Returns:
         An augmented string with information from recognized probes.
@@ -156,70 +160,104 @@ def format_epoch_printout(
     train_pval_str: Optional[str] = None
     test_pval_str: Optional[str] = None
 
-    for result in epoch_probe_results:
-        if isinstance(result, ObjectiveProbe):
-            # Assuming objective_name is like "total_loss", "accuracy", etc.
-            # And result.objective is the float value.
-            # And result.data_source is "TRAIN", "TEST", etc.
-            ds_str = result.data_source.upper()
-            obj_name = result.objective_name or "Objective"
-            obj_val_str = (
-                f"{result.objective:.4f}"
-                if isinstance(result.objective, float)
-                else str(result.objective)
+    # Extract probe results from trajectory for current epoch
+    if probe_manager is not None and hasattr(probe_manager, "trajectory"):
+        from regnn.probe.dataclass.probe_config import FrequencyType
+
+        epoch_results: List[ProbeData] = []
+        iteration_pval_results: List[OLSModeratedResultsProbe] = []
+
+        # Find all snapshots for current epoch
+        for snapshot in probe_manager.trajectory.data:
+            if snapshot.epoch == current_epoch and hasattr(
+                snapshot, "frequency_context"
+            ):
+                if snapshot.frequency_context == FrequencyType.EPOCH:
+                    # Collect epoch-level results
+                    epoch_results.extend(snapshot.measurements)
+                elif snapshot.frequency_context == FrequencyType.ITERATION:
+                    # Collect iteration-level regression results
+                    for measurement in snapshot.measurements:
+                        if isinstance(measurement, OLSModeratedResultsProbe):
+                            iteration_pval_results.append(measurement)
+
+        # Process epoch-level results first
+        for result in epoch_results:
+            if isinstance(result, ObjectiveProbe):
+                ds_str = result.data_source.upper()
+                obj_name = result.objective_name or "Objective"
+                obj_val_str = (
+                    f"{result.objective:.4f}"
+                    if isinstance(result.objective, float)
+                    else str(result.objective)
+                )
+
+                if ds_str == DataSource.TEST.value:
+                    test_objective_str = f"Test {obj_name}: {obj_val_str}"
+                elif ds_str == DataSource.VALIDATION.value:
+                    val_objective_str = f"Val {obj_name}: {obj_val_str}"
+
+            elif isinstance(result, OLSModeratedResultsProbe):
+                ds_str = result.data_source.upper()
+                pval_str = (
+                    f"{result.interaction_pval:.4f}"
+                    if result.interaction_pval is not None
+                    else "N/A"
+                )
+                r2_str = (
+                    f"{result.rsquared:.3f}" if result.rsquared is not None else "N/A"
+                )
+
+                current_pval_info = f"{ds_str} PVal: {pval_str} (R2: {r2_str})"
+                if ds_str == DataSource.TRAIN.value:
+                    train_pval_str = current_pval_info
+                elif ds_str == DataSource.TEST.value:
+                    test_pval_str = current_pval_info
+
+            elif isinstance(result, L2NormProbe):
+                ds_str = result.data_source.upper()
+                main_norm_str = (
+                    f"{result.main_norm:.4e}"
+                    if isinstance(result.main_norm, float)
+                    else str(result.main_norm)
+                )
+                index_norm_str = (
+                    f"{result.index_norm:.4e}"
+                    if isinstance(result.index_norm, float)
+                    else str(result.index_norm)
+                )
+                l2_info = f"{ds_str} L2: Main={main_norm_str}, Index={index_norm_str}"
+                if ds_str == DataSource.TRAIN.value:
+                    train_l2_norm_str = l2_info
+                elif ds_str == DataSource.TEST.value:
+                    test_l2_norm_str = l2_info
+                elif result.data_source.upper() == DataSource.ALL.value:
+                    train_l2_norm_str = (
+                        f"Global L2: Main={main_norm_str}, Index={index_norm_str}"
+                    )
+
+        # Get last iteration results for each data source (only if no epoch-level results exist)
+        last_iteration_results: Dict[str, OLSModeratedResultsProbe] = {}
+        for result in iteration_pval_results:
+            ds_key = result.data_source.upper()
+            last_iteration_results[ds_key] = (
+                result  # Later ones will overwrite earlier ones
             )
 
-            if ds_str == DataSource.TEST.value:
-                test_objective_str = f"Test {obj_name}: {obj_val_str}"
-            elif ds_str == DataSource.VALIDATION.value:
-                val_objective_str = f"Val {obj_name}: {obj_val_str}"
-            # Train objective is already in base_printout, typically
-
-        elif isinstance(result, OLSModeratedResultsProbe):
-            ds_str = result.data_source.upper()
+        # Add iteration-level results only if no epoch-level results exist for that data source
+        for ds_key, result in last_iteration_results.items():
             pval_str = (
                 f"{result.interaction_pval:.4f}"
                 if result.interaction_pval is not None
                 else "N/A"
             )
             r2_str = f"{result.rsquared:.3f}" if result.rsquared is not None else "N/A"
+            current_pval_info = f"{ds_key} PVal: {pval_str} (R2: {r2_str}) [iter]"
 
-            current_pval_info = f"{ds_str} PVal: {pval_str} (R2: {r2_str})"
-            if ds_str == DataSource.TRAIN.value:
+            if ds_key == DataSource.TRAIN.value and train_pval_str is None:
                 train_pval_str = current_pval_info
-            elif ds_str == DataSource.TEST.value:
+            elif ds_key == DataSource.TEST.value and test_pval_str is None:
                 test_pval_str = current_pval_info
-
-        elif isinstance(result, L2NormProbe):
-            ds_str = (
-                result.data_source.upper()
-            )  # L2NormProbe might not always have a data_source if global
-            # For now, assume it might, or handle if it's None/ALL
-            main_norm_str = (
-                f"{result.main_norm:.4e}"
-                if isinstance(result.main_norm, float)
-                else str(result.main_norm)
-            )
-            index_norm_str = (
-                f"{result.index_norm:.4e}"
-                if isinstance(result.index_norm, float)
-                else str(result.index_norm)
-            )
-            l2_info = f"{ds_str} L2: Main={main_norm_str}, Index={index_norm_str}"
-            if (
-                ds_str == DataSource.TRAIN.value
-            ):  # Or if data_source is None/ALL for a global L2
-                train_l2_norm_str = l2_info
-            elif (
-                ds_str == DataSource.TEST.value
-            ):  # L2 on test data might not be common, but possible if model changes
-                test_l2_norm_str = l2_info
-            elif (
-                result.data_source.upper() == DataSource.ALL.value
-            ):  # Handle global L2 Norm
-                train_l2_norm_str = (
-                    f"Global L2: Main={main_norm_str}, Index={index_norm_str}"
-                )
 
     # Assemble the printout string in a preferred order
     if test_objective_str:

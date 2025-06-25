@@ -10,7 +10,6 @@ from regnn.probe.dataclass.probe_config import (
 from regnn.probe.dataclass.results import EarlyStoppingSignalProbeResult
 from regnn.probe.dataclass.trajectory import (
     Trajectory,
-    Snapshot,
 )  # To access historical data
 from regnn.probe.dataclass.regression import (
     OLSModeratedResultsProbe,
@@ -74,12 +73,24 @@ def pval_early_stopping_probe(
         ds: {} for ds in schedule_config.data_sources_to_monitor
     }
 
-    for snapshot in trajectory.data:
-        if snapshot.frequency_context != FrequencyType.EPOCH:
-            continue
-        snapshot_epoch = snapshot.epoch
-        # No need to check patience here again, will filter joint_evaluation_epochs later
+    # Group snapshots by epoch and frequency type
+    epoch_snapshots: Dict[int, List[Any]] = {}
+    iteration_snapshots: Dict[int, List[Any]] = {}
 
+    for snapshot in trajectory.data:
+        snapshot_epoch = snapshot.epoch
+
+        if snapshot.frequency_context == FrequencyType.EPOCH:
+            if snapshot_epoch not in epoch_snapshots:
+                epoch_snapshots[snapshot_epoch] = []
+            epoch_snapshots[snapshot_epoch].append(snapshot)
+        elif snapshot.frequency_context == FrequencyType.ITERATION:
+            if snapshot_epoch not in iteration_snapshots:
+                iteration_snapshots[snapshot_epoch] = []
+            iteration_snapshots[snapshot_epoch].append(snapshot)
+
+    def process_snapshot_measurements(snapshot, snapshot_epoch):
+        """Helper function to process measurements from a snapshot"""
         for measurement in snapshot.measurements:
             if isinstance(measurement, OLSModeratedResultsProbe):
                 try:
@@ -95,11 +106,23 @@ def pval_early_stopping_probe(
                     )
                     continue
 
+    # Process epoch-based snapshots first
+    for epoch, snapshots in epoch_snapshots.items():
+        for snapshot in snapshots:
+            process_snapshot_measurements(snapshot, epoch)
+
+    # Process iteration-based snapshots (take last iteration per epoch)
+    # Only for epochs that don't already have epoch-based measurements
+    for epoch, snapshots in iteration_snapshots.items():
+        if epoch not in epoch_snapshots:
+            # Take the last snapshot for this epoch (assuming chronological order)
+            last_snapshot = snapshots[-1]
+            process_snapshot_measurements(last_snapshot, epoch)
+
     # Identify joint evaluation epochs where ALL monitored sources have p-values and epoch >= patience
     all_epochs_with_any_data = sorted(
         list(set(ep for ds_hist in p_values_history.values() for ep in ds_hist.keys()))
     )
-
     joint_evaluation_epochs = []
     for e in all_epochs_with_any_data:
         if e < schedule_config.patience:

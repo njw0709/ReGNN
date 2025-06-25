@@ -295,7 +295,7 @@ def train(
         # The loop will break at the start of the next epoch if training_should_continue is False
 
         # Format and print epoch results including probe data
-        epoch_printout = format_epoch_printout(base_printout, epoch_probes_results)
+        epoch_printout = format_epoch_printout(base_printout, epoch, probe_manager)
         print(epoch_printout)
 
     # --- POST-TRAINING PROBES ---
