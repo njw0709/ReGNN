@@ -114,7 +114,7 @@ def pval_early_stopping_probe(
     # Process iteration-based snapshots (take last iteration per epoch)
     # Only for epochs that don't already have epoch-based measurements
     for epoch, snapshots in iteration_snapshots.items():
-        if epoch not in epoch_snapshots:
+        if epoch not in p_values_history[snapshot.measurements[0].data_source].keys():
             # Take the last snapshot for this epoch (assuming chronological order)
             last_snapshot = snapshots[-1]
             process_snapshot_measurements(last_snapshot, epoch)
