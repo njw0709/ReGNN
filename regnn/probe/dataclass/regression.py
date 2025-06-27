@@ -1,4 +1,5 @@
 from pydantic import Field, ConfigDict, field_validator, BaseModel
+from numpydantic import NDArray, Shape
 from .base import ProbeData
 from typing import Dict, Optional, List, Union
 import math
@@ -45,13 +46,13 @@ class OLSModeratedResultsProbe(OLSResultsProbe):
     interaction_pval: float = Field(-1.0, description="P-value of the interaction term")
 
     # New fields for more comprehensive results
-    coefficients: Optional[Union[np.ndarray, List]] = Field(
+    coefficients: Optional[Union[NDArray[Shape["*"], np.float32], List]] = Field(
         None, description="All estimated coefficients from the regression model."
     )
-    standard_errors: Optional[Union[np.ndarray, List]] = Field(
+    standard_errors: Optional[Union[NDArray[Shape["*"], np.float32], List]] = Field(
         None, description="Standard errors for the coefficients."
     )
-    p_values: Optional[Union[np.ndarray, List]] = Field(
+    p_values: Optional[Union[NDArray[Shape["*"], np.float32], List]] = Field(
         None, description="P-values for the coefficients."
     )
     n_observations: Optional[int] = Field(

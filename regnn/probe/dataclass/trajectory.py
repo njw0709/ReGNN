@@ -30,7 +30,7 @@ class Snapshot(BaseModel):
         description="The frequency context under which these probes were run (e.g., PRE_TRAINING, EPOCH).",
     )
 
-    measurements: List[SerializeAsAny[ProbeData]] = Field(
+    measurements: SerializeAsAny[List[ProbeData]] = Field(
         default_factory=list,
         description="List of ProbeData results collected during this snapshot.",
     )
