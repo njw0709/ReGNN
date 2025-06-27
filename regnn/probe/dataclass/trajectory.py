@@ -2,6 +2,29 @@ from typing import List, Union, Type, Optional
 from pydantic import BaseModel, Field, ConfigDict, computed_field, SerializeAsAny
 from .probe_config import FrequencyType
 from .base import ProbeData
+from .nn import ObjectiveProbe
+from .regression import (
+    OLSModeratedResultsProbe,
+    OLSResultsProbe,
+    VarianceInflationFactorProbe,
+    L2NormProbe,
+)
+from .results import (
+    IntermediateIndexSavedProbeResult,
+    EarlyStoppingSignalProbeResult,
+    CheckpointSavedProbeResult,
+)
+
+ProbeDataType = Union[
+    OLSModeratedResultsProbe,
+    OLSResultsProbe,
+    VarianceInflationFactorProbe,
+    L2NormProbe,
+    IntermediateIndexSavedProbeResult,
+    EarlyStoppingSignalProbeResult,
+    CheckpointSavedProbeResult,
+    ObjectiveProbe,
+]
 
 
 class Snapshot(BaseModel):
@@ -30,7 +53,7 @@ class Snapshot(BaseModel):
         description="The frequency context under which these probes were run (e.g., PRE_TRAINING, EPOCH).",
     )
 
-    measurements: SerializeAsAny[List[ProbeData]] = Field(
+    measurements: SerializeAsAny[List[ProbeDataType]] = Field(
         default_factory=list,
         description="List of ProbeData results collected during this snapshot.",
     )
