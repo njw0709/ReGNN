@@ -10,6 +10,7 @@ from regnn.probe.dataclass.probe_config import (
 from regnn.probe.dataclass.results import EarlyStoppingSignalProbeResult
 from regnn.probe.dataclass.trajectory import (
     Trajectory,
+    Snapshot,
 )  # To access historical data
 from regnn.probe.dataclass.regression import (
     OLSModeratedResultsProbe,
@@ -97,9 +98,13 @@ def pval_early_stopping_probe(
                     measurement_ds_enum = DataSource(measurement.data_source)
                     if measurement_ds_enum in schedule_config.data_sources_to_monitor:
                         if measurement.interaction_pval is not None:
-                            p_values_history[measurement_ds_enum][
+                            if (
                                 snapshot_epoch
-                            ] = measurement.interaction_pval
+                                not in p_values_history[measurement_ds_enum].keys()
+                            ):
+                                p_values_history[measurement_ds_enum][
+                                    snapshot_epoch
+                                ] = measurement.interaction_pval
                 except ValueError:
                     print(
                         f"Warning: OLSModeratedResultsProbe had an invalid data_source string: {measurement.data_source}"
@@ -107,6 +112,7 @@ def pval_early_stopping_probe(
                     continue
 
     # Process epoch-based snapshots first
+    snapshots: List[Snapshot] = []
     for epoch, snapshots in epoch_snapshots.items():
         for snapshot in snapshots:
             process_snapshot_measurements(snapshot, epoch)
@@ -114,9 +120,18 @@ def pval_early_stopping_probe(
     # Process iteration-based snapshots (take last iteration per epoch)
     # Only for epochs that don't already have epoch-based measurements
     for epoch, snapshots in iteration_snapshots.items():
-        if epoch not in p_values_history[snapshot.measurements[0].data_source].keys():
-            # Take the last snapshot for this epoch (assuming chronological order)
-            last_snapshot = snapshots[-1]
+        # get last snapshot
+        largest_iteration = -1
+        last_snapshot: Union[None, Snapshot] = None
+        for snapshot in snapshots:
+            for measurement in snapshot.measurements:
+                if (
+                    isinstance(measurement, OLSModeratedResultsProbe)
+                    and snapshot.iteration_in_epoch > largest_iteration
+                ):
+                    last_snapshot = snapshot
+                    largest_iteration = snapshot.iteration_in_epoch
+        if last_snapshot is not None:
             process_snapshot_measurements(last_snapshot, epoch)
 
     # Identify joint evaluation epochs where ALL monitored sources have p-values and epoch >= patience
