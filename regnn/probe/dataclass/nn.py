@@ -1,5 +1,5 @@
 from pydantic import Field, ConfigDict
-from typing import Optional, Dict
+from typing import Optional, Dict, Literal
 from .base import ProbeData
 
 
@@ -16,3 +16,4 @@ class ObjectiveProbe(ProbeData):
         None,
         description="Optional breakdown of the objective (e.g., main loss, regularization loss).",
     )
+    probe_type_name: Literal["ObjectiveProbe"] = "ObjectiveProbe"

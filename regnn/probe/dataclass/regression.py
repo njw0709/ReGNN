@@ -1,6 +1,6 @@
 from pydantic import Field, ConfigDict, field_validator, BaseModel
 from .base import ProbeData
-from typing import Dict, Optional, List, Union
+from typing import Dict, Optional, List, Union, Literal
 import math
 import numpy as np
 
@@ -24,6 +24,7 @@ class OLSResultsProbe(ProbeData):
         None, description="Adjusted R-squared value"
     )
     rmse: Optional[float] = Field(None, description="Root mean squared error")
+    probe_type_name: Literal["OLSResultsProbe"] = "OLSResultsProbe"
 
     @field_validator("rsquared", "adjusted_rsquared")
     def validate_rsquared(cls, v: Optional[float]) -> Optional[float]:
@@ -61,6 +62,7 @@ class OLSModeratedResultsProbe(OLSResultsProbe):
         None,
         description="Raw summary string as output by the statistical package (e.g., statsmodels summary table).",
     )
+    probe_type_name: Literal["OLSModeratedResultsProbe"] = "OLSModeratedResultsProbe"
 
     @field_validator("interaction_pval")
     def validate_pval(cls, v: Optional[float]) -> Optional[float]:
@@ -80,6 +82,9 @@ class VarianceInflationFactorProbe(ProbeData):
     vif_interaction: float = Field(
         ..., description="Variance inflation factor for interaction term"
     )
+    probe_type_name: Literal["VarianceInflationFactorProbe"] = (
+        "VarianceInflationFactorProbe"
+    )
 
 
 class L2NormProbe(ProbeData):
@@ -89,6 +94,7 @@ class L2NormProbe(ProbeData):
 
     main_norm: float = Field(-1, description="L2 norm of main parameters")
     index_norm: float = Field(-1, description="L2 norm of index parameters")
+    probe_type_name: Literal["L2NormProbe"] = "L2NormProbe"
 
     @classmethod
     def from_dict(
