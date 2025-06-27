@@ -16,4 +16,3 @@ class ObjectiveProbe(ProbeData):
         None,
         description="Optional breakdown of the objective (e.g., main loss, regularization loss).",
     )
-    probe_type_name: Literal["ObjectiveProbe"] = "ObjectiveProbe"

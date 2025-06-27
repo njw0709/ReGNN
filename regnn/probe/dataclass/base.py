@@ -23,7 +23,10 @@ class ProbeData(BaseModel):
         None, description="Optional message, e.g., error details if status is failure."
     )
 
-    probe_type_name: str
+    @computed_field(return_type=str)
+    @property
+    def probe_type_name(self) -> str:
+        return self.__class__.__name__
 
 
 class ProbeOptions(BaseModel):

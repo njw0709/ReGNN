@@ -15,18 +15,15 @@ from .results import (
     CheckpointSavedProbeResult,
 )
 
-ProbeDataType = Annotated[
-    Union[
-        OLSModeratedResultsProbe,
-        OLSResultsProbe,
-        VarianceInflationFactorProbe,
-        L2NormProbe,
-        IntermediateIndexSavedProbeResult,
-        EarlyStoppingSignalProbeResult,
-        CheckpointSavedProbeResult,
-        ObjectiveProbe,
-    ],
-    Field(discriminator="probe_type_name"),
+ProbeDataType = Union[
+    OLSModeratedResultsProbe,
+    OLSResultsProbe,
+    VarianceInflationFactorProbe,
+    L2NormProbe,
+    IntermediateIndexSavedProbeResult,
+    EarlyStoppingSignalProbeResult,
+    CheckpointSavedProbeResult,
+    ObjectiveProbe,
 ]
 
 
@@ -56,7 +53,7 @@ class Snapshot(BaseModel):
         description="The frequency context under which these probes were run (e.g., PRE_TRAINING, EPOCH).",
     )
 
-    measurements: List[ProbeDataType] = Field(
+    measurements: SerializeAsAny[List[ProbeDataType]] = Field(
         default_factory=list,
         description="List of ProbeData results collected during this snapshot.",
     )
