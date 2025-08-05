@@ -196,13 +196,13 @@ class IndexPredictionModel(nn.Module):
             # For single model, use the last hidden layer size
             if self.num_models == 1:
                 num_features = hidden_layer_sizes[-1]
-                self.bn = nn.BatchNorm1d(num_features, affine=False)
+                self.bn = nn.BatchNorm1d(num_features, affine=True)
             # For multiple models, sum the last hidden layer sizes
             else:
                 self.bns = nn.ModuleList()
                 for hs in hidden_layer_sizes:
                     num_features = hs[-1]
-                    self.bns.append(nn.BatchNorm1d(num_features, affine=False))
+                    self.bns.append(nn.BatchNorm1d(num_features, affine=True))
 
         if svd:
             assert svd_matrix is not None

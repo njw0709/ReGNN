@@ -13,12 +13,18 @@ from regnn.probe.dataclass.probe_config import FrequencyType, DataSource
 from regnn.probe.dataclass.results import EarlyStoppingSignalProbeResult
 
 from .base import MacroConfig
-from .utils import compute_svd, setup_loss_and_optimizer, format_epoch_printout
+from .utils import (
+    compute_svd,
+    setup_loss_and_optimizer,
+    format_epoch_printout,
+    balance_gradients_for_regnn,
+)
 
 
 def train(
     all_dataset: ReGNNDataset,
     macro_config: MacroConfig,
+    gradient_balance: float = -1,
 ) -> Union[Tuple[ReGNN, Trajectory], ReGNN]:
     """
     Train a ReGNN model using the comprehensive MacroConfig.
@@ -145,7 +151,6 @@ def train(
         model.train()
         epoch_train_loss_sum = 0.0
         num_batches_epoch = 0
-
         for batch_idx, batch_data_cpu in enumerate(train_dataloader):
             # Move batch data to the correct device
             batch_data = {
@@ -216,6 +221,8 @@ def train(
                 total_batch_loss = total_batch_loss.mean()
 
             total_batch_loss.backward()
+            if gradient_balance > 0:
+                balance_gradients_for_regnn(model, desired_ratio=gradient_balance)
             optimizer.step()
 
             epoch_train_loss_sum += (

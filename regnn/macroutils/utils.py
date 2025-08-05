@@ -126,6 +126,46 @@ def setup_loss_and_optimizer(
     return loss_func, regularization, optimizer
 
 
+def balance_gradients_for_regnn(
+    model: ReGNN, desired_ratio: float = 1.0, eps: float = 1e-8
+):
+    """
+    Adjust gradient magnitudes for ReGNN model to prioritize modulation (index_prediction_model)
+    vs. linear head learning (linear_weights and focal_predictor_main_weight).
+
+    Parameters:
+    - model: an instance of ReGNN
+    - desired_ratio: target ratio of mod_head norm to linear_head norm (default = 1.0)
+    - eps: small constant to avoid divide-by-zero
+    """
+    linear_norm = 0.0
+    mod_norm = 0.0
+
+    # First, compute current gradient norms
+    for name, param in model.named_parameters():
+        if param.grad is None:
+            continue
+        if "linear_weights" in name or "focal_predictor_main_weight" in name:
+            linear_norm += param.grad.norm(2).item() ** 2
+        elif "index_prediction_model" in name:
+            mod_norm += param.grad.norm(2).item() ** 2
+
+    linear_norm = linear_norm**0.5
+    mod_norm = mod_norm**0.5
+
+    # Compute scaling factor for linear gradients
+    scale = (mod_norm + eps) / (linear_norm + eps) * desired_ratio
+    if scale > 1.0:
+        return
+
+    # Apply rescaling to linear gradients
+    for name, param in model.named_parameters():
+        if param.grad is None:
+            continue
+        if "linear_weights" in name or "focal_predictor_main_weight" in name:
+            param.grad.mul_(scale)
+
+
 def format_epoch_printout(
     base_printout: str,
     current_epoch: int,
