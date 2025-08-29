@@ -1,5 +1,5 @@
-from typing import Optional, Literal
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, Literal, Union
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 import torch
 
 
@@ -98,6 +98,10 @@ class TrainingHyperParams(BaseModel):
         description="Device to run model on",
     )
     shuffle: bool = Field(True, description="Whether to shuffle training data")
+    kfold: Union[bool, float] = Field(
+        False, description="Whether to use k-fold division of data"
+    )
+    k_to_hold: Union[None, int] = Field(None, description="which Kth fold to hold out")
     train_test_split_ratio: float = Field(
         0.8, description="ratio of samples to use for training set"
     )
@@ -110,3 +114,12 @@ class TrainingHyperParams(BaseModel):
         default_factory=LossConfigs,
         description="Configuration for loss function and regularization",
     )
+
+    @model_validator(mode="after")
+    def check_kfold_and_k(cls, values):
+        if values.kfold:
+            if values.k is None or not isinstance(values.k, int):
+                raise ValueError(
+                    "If kfold is True, 'k' must be provided and must be an integer."
+                )
+        return values

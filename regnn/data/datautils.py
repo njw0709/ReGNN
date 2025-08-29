@@ -40,6 +40,40 @@ def train_test_val_split(
     return train_indices, test_indices, val_indices
 
 
+def kfold_split(num_elems, k=5, holdout_fold=0, seed=42):
+    """
+    Split data indices into train and test sets for k-fold cross validation.
+
+    Args:
+        num_elems (int): Total number of samples.
+        k (int): Number of folds.
+        holdout_fold (int): Which fold to use as the test set (0 <= holdout_fold < k).
+        seed (int): Random seed for reproducibility.
+
+    Returns:
+        train_indices (np.ndarray): Indices for training set.
+        test_indices (np.ndarray): Indices for test/validation set.
+    """
+    if k <= 1:
+        raise ValueError("k must be at least 2 for k-fold cross validation.")
+    if not (0 <= holdout_fold < k):
+        raise ValueError(f"holdout_fold must be between 0 and {k-1}.")
+
+    # create and shuffle indices
+    indices = np.arange(num_elems)
+    np.random.seed(seed)
+    np.random.shuffle(indices)
+
+    # split into k folds
+    folds = np.array_split(indices, k)
+
+    # select test and train folds
+    test_indices = folds[holdout_fold]
+    train_indices = np.concatenate([folds[i] for i in range(k) if i != holdout_fold])
+
+    return train_indices, test_indices
+
+
 def summary(samples):
     site_stats = {}
     for k, v in samples.items():

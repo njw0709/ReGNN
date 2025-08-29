@@ -2,7 +2,7 @@ from typing import List, Optional, Tuple, Union, Dict, Any
 from torch.utils.data import DataLoader as TorchDataLoader
 import torch
 
-from regnn.data import train_test_split, ReGNNDataset
+from regnn.data import train_test_split, ReGNNDataset, kfold_split
 from regnn.model import ReGNN
 from regnn.train import KLDLossConfig
 from regnn.probe import Trajectory
@@ -47,11 +47,19 @@ def train(
     )
 
     # 2. Data Splitting
-    train_indices, test_indices = train_test_split(
-        num_elems=len(all_dataset),
-        train_ratio=training_hp.train_test_split_ratio,
-        seed=training_hp.train_test_split_seed,
-    )
+    if training_hp.kfold is not None:
+        train_indices, test_indices = kfold_split(
+            num_elems=len(all_dataset),
+            k=training_hp.kfold,
+            holdout_fold=training_hp.k_to_hold,
+            seed=training_hp.train_test_split_seed,
+        )
+    else:
+        train_indices, test_indices = train_test_split(
+            num_elems=len(all_dataset),
+            train_ratio=training_hp.train_test_split_ratio,
+            seed=training_hp.train_test_split_seed,
+        )
     train_dataset = all_dataset.get_subset(train_indices)
     test_dataset = (
         all_dataset.get_subset(test_indices) if test_indices is not None else None
