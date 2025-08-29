@@ -2,7 +2,7 @@ from typing import List, Optional, Tuple, Union, Dict, Any
 from torch.utils.data import DataLoader as TorchDataLoader
 import torch
 
-from regnn.data import train_test_split, ReGNNDataset, kfold_split
+from regnn.data import train_test_split, ReGNNDataset, kfold_split, train_test_val_split
 from regnn.model import ReGNN
 from regnn.train import KLDLossConfig
 from regnn.probe import Trajectory
@@ -52,6 +52,14 @@ def train(
             num_elems=len(all_dataset),
             k=training_hp.kfold,
             holdout_fold=training_hp.k_to_hold,
+            seed=training_hp.train_test_split_seed,
+        )
+    elif training_hp.val_ratio > 0.0:
+        train_indices, _, test_indices = train_test_val_split(
+            num_elems=len(all_dataset),
+            train_ratio=training_hp.train_test_split_ratio,
+            test_ratio=1 - (training_hp.train_test_split_ratio + training_hp.val_ratio),
+            val_ratio=training_hp.val_ratio,
             seed=training_hp.train_test_split_seed,
         )
     else:

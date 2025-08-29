@@ -98,12 +98,15 @@ class TrainingHyperParams(BaseModel):
         description="Device to run model on",
     )
     shuffle: bool = Field(True, description="Whether to shuffle training data")
-    kfold: Union[bool, float] = Field(
-        False, description="Whether to use k-fold division of data"
+    kfold: Union[None, int] = Field(
+        None, description="Whether to use k-fold division of data"
     )
     k_to_hold: Union[None, int] = Field(None, description="which Kth fold to hold out")
     train_test_split_ratio: float = Field(
         0.8, description="ratio of samples to use for training set"
+    )
+    val_ratio: float = Field(
+        0.0, description="validation dataset ratio. Must be smaller than test"
     )
     train_test_split_seed: int = Field(
         42,
@@ -117,9 +120,18 @@ class TrainingHyperParams(BaseModel):
 
     @model_validator(mode="after")
     def check_kfold_and_k(cls, values):
-        if values.kfold:
-            if values.k is None or not isinstance(values.k, int):
+        if values.kfold is not None:
+            if values.k_to_hold is None or not isinstance(values.k_to_hold, int):
                 raise ValueError(
                     "If kfold is True, 'k' must be provided and must be an integer."
+                )
+        return values
+
+    @model_validator(mode="after")
+    def check_val_ratio(cls, values):
+        if values.val_ratio > 0.0:
+            if 1 - values.train_test_split_ratio < values.val_ratio:
+                raise ValueError(
+                    "Test split ratio must be smaller than validation set ratio!"
                 )
         return values
