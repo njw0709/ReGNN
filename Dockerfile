@@ -1,4 +1,5 @@
-FROM pytorch-notebook-cpu-stata:latest
+FROM pytorch-notebook-gpu-stata:latest
 WORKDIR /app
-COPY . .
-RUN pip install -e .
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+# RUN pip install -e

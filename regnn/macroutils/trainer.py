@@ -54,6 +54,11 @@ def train(
             holdout_fold=training_hp.k_to_hold,
             seed=training_hp.train_test_split_seed,
         )
+        if training_hp.val_ratio > 0.0:
+            val_set_num = int(len(all_dataset) * training_hp.val_ratio)
+            print(val_set_num)
+            if val_set_num < len(test_indices):
+                test_indices = test_indices[:val_set_num]
     elif training_hp.val_ratio > 0.0:
         train_indices, _, test_indices = train_test_val_split(
             num_elems=len(all_dataset),

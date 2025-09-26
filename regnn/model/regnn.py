@@ -575,16 +575,22 @@ class ReGNN(nn.Module):
             Xty = X_full.t() @ y
 
             # Try Cholesky first (faster and more stable for well-conditioned matrices)
-            try:
-                L = torch.linalg.cholesky(XtX)
-                weights = torch.cholesky_solve(Xty.unsqueeze(-1), L).squeeze(-1)
-            except:
-                # Fallback to SVD with explicit conditioning threshold
-                U, S, Vh = torch.linalg.svd(X_full, full_matrices=False)
-                # Filter small singular values
-                threshold = eps * S.max()
-                S_inv = torch.where(S > threshold, 1.0 / (S + eps), torch.zeros_like(S))
-                weights = (Vh.t() * S_inv.unsqueeze(-1)) @ (U.t() @ y)
+            if X_full.size(0) < X_full.size(1):
+                # More predictors than samples → underdetermined
+                weights = torch.linalg.pinv(X_full) @ y
+            else:
+                try:
+                    L = torch.linalg.cholesky(XtX)
+                    weights = torch.cholesky_solve(Xty.unsqueeze(-1), L).squeeze(-1)
+                except:
+                    # Fallback to SVD with explicit conditioning threshold
+                    U, S, Vh = torch.linalg.svd(X_full, full_matrices=False)
+                    # Filter small singular values
+                    threshold = eps * S.max()
+                    S_inv = torch.where(
+                        S > threshold, 1.0 / (S + eps), torch.zeros_like(S)
+                    )
+                    weights = (Vh.t() * S_inv.unsqueeze(-1)) @ (U.t() @ y)
 
             # Ensure outcome has shape [batch, 1, 1] regardless of s_weights
             outcome = (X_full @ weights).view(

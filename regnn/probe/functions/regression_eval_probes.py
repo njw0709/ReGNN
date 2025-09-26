@@ -1,4 +1,4 @@
-from typing import Dict, Any, Callable, Optional, TypeVar
+from typing import Any, Callable, Optional, TypeVar
 from regnn.train import TrainingHyperParams
 
 from ..registry import register_probe
