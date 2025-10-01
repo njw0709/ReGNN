@@ -412,9 +412,11 @@ class ReGNN(nn.Module):
         if not self.use_closed_form_linear_weights:
             self.focal_predictor_main_weight = nn.Parameter(torch.randn(1, 1))
             self.predicted_index_weight = nn.Parameter(torch.randn(1, self.num_models))
+            self.intercept = nn.Parameter(torch.randn(1, 1))
             self.mmr_parameters = [
                 self.focal_predictor_main_weight,
                 self.predicted_index_weight,
+                self.intercept,
             ]
             if self.has_linear_terms:
                 self.linear_weights = nn.Linear(num_linear, 1)
@@ -553,17 +555,27 @@ class ReGNN(nn.Module):
             )
 
             outcome = (
-                linear_terms + focal_predictor_main_effect + predicted_interaction_term
+                linear_terms
+                + focal_predictor_main_effect
+                + predicted_interaction_term
+                + self.intercept
             )
 
         else:
+            # Build design matrix with predictors and interaction
             X_full = torch.cat(
                 [all_linear_vars, predicted_index * focal_predictor], dim=2
             )  # shape: [batch, 1, n_terms]
             X_full = X_full.reshape(X_full.size(0), -1)  # shape: [batch, n_terms]
+
+            # Add intercept column (constant ones)
+            ones = torch.ones(X_full.size(0), 1, device=X_full.device)
+            X_full = torch.cat([ones, X_full], dim=1)  # shape: [batch, n_terms + 1]
+
+            # Apply weights if provided
             if s_weights is not None:
                 sqrt_s_weights = torch.sqrt(s_weights).squeeze(-1)  # shape: [batch]
-                X_full = X_full * sqrt_s_weights  # shape: [batch, n_terms]
+                X_full = X_full * sqrt_s_weights.unsqueeze(-1)  # scale each row
                 y = y.squeeze(-1)
                 y = y * sqrt_s_weights
             y = torch.squeeze(y, -1)
@@ -574,28 +586,25 @@ class ReGNN(nn.Module):
             XtX = X_full.t() @ X_full + eps * torch.eye(n, device=X_full.device)
             Xty = X_full.t() @ y
 
-            # Try Cholesky first (faster and more stable for well-conditioned matrices)
+            # Solve least squares
             if X_full.size(0) < X_full.size(1):
-                # More predictors than samples → underdetermined
+                # Underdetermined → pseudo-inverse
                 weights = torch.linalg.pinv(X_full) @ y
             else:
                 try:
                     L = torch.linalg.cholesky(XtX)
                     weights = torch.cholesky_solve(Xty.unsqueeze(-1), L).squeeze(-1)
                 except:
-                    # Fallback to SVD with explicit conditioning threshold
+                    # Fallback to SVD
                     U, S, Vh = torch.linalg.svd(X_full, full_matrices=False)
-                    # Filter small singular values
                     threshold = eps * S.max()
                     S_inv = torch.where(
                         S > threshold, 1.0 / (S + eps), torch.zeros_like(S)
                     )
                     weights = (Vh.t() * S_inv.unsqueeze(-1)) @ (U.t() @ y)
 
-            # Ensure outcome has shape [batch, 1, 1] regardless of s_weights
-            outcome = (X_full @ weights).view(
-                -1, 1, 1
-            )  # Explicitly reshape to [batch, 1, 1]
+            # Predict outcome (keep consistent shape)
+            outcome = (X_full @ weights).view(-1, 1, 1)
 
         if self.vae:
             if not self.training:
