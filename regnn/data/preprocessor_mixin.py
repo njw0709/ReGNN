@@ -16,7 +16,22 @@ class PreprocessorMixin:
             original_cols = step.columns.copy()
 
             # Apply preprocessing
-            df_temp, return_value = step.function(df_temp, step.columns)
+            # Check if there are extra parameters to pass (for functions like debias_focal_predictor)
+            if (
+                step.reverse_transform_info
+                and step.function.__name__ == "debias_focal_predictor"
+            ):
+                # Pass the extra parameters
+                extra_params = {
+                    k: v
+                    for k, v in step.reverse_transform_info.items()
+                    if k not in ["original_columns", "new_columns"]
+                }
+                df_temp, return_value = step.function(
+                    df_temp, step.columns, **extra_params
+                )
+            else:
+                df_temp, return_value = step.function(df_temp, step.columns)
 
             # Update column lists if columns were changed
             if isinstance(return_value, dict):
@@ -46,23 +61,48 @@ class PreprocessorMixin:
                                 [new_c for new_c in new_colnames if c in new_c]
                             )
 
+                # Also update controlled_predictors in any debias steps that come later
+                for future_step in self.config.preprocess_steps:
+                    if (
+                        future_step.function.__name__ == "debias_focal_predictor"
+                        and future_step.reverse_transform_info
+                        and "controlled_predictors"
+                        in future_step.reverse_transform_info
+                    ):
+                        controlled_list = future_step.reverse_transform_info[
+                            "controlled_predictors"
+                        ]
+                        for c in step.columns:
+                            if c in controlled_list:
+                                controlled_list.remove(c)
+                                controlled_list.extend(
+                                    [new_c for new_c in new_colnames if c in new_c]
+                                )
+
             # Store reverse transformation info
             if hasattr(step.function, "_reverse_transform"):
                 # For functions that have built-in reverse transform
                 step.reverse_function = step.function._reverse_transform
                 if isinstance(return_value, dict):
-                    step.reverse_transform_info = return_value
+                    # Merge with existing reverse_transform_info if present (for debias_focal_predictor)
+                    if step.reverse_transform_info:
+                        step.reverse_transform_info.update(return_value)
+                    else:
+                        step.reverse_transform_info = return_value
                 else:
+                    # Preserve existing reverse_transform_info if present
+                    if not step.reverse_transform_info:
+                        step.reverse_transform_info = {
+                            "original_columns": original_cols,
+                            "new_columns": new_colnames,
+                        }
+            else:
+                # For functions without built-in reverse transform
+                if not step.reverse_transform_info:
                     step.reverse_transform_info = {
                         "original_columns": original_cols,
                         "new_columns": new_colnames,
                     }
-            else:
-                # For functions without built-in reverse transform
-                step.reverse_transform_info = {
-                    "original_columns": original_cols,
-                    "new_columns": new_colnames,
-                }
 
         if inplace:
             self.df = df_temp

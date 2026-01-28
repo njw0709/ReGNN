@@ -15,6 +15,7 @@ from .preprocess_fns import (
     convert_categorical_to_ordinal,
     standardize_cols,
     map_to_zero_one,
+    debias_focal_predictor,
 )
 from collections import defaultdict
 from pathlib import Path
@@ -27,6 +28,7 @@ function_registry = {
     "standardize_cols": standardize_cols,
     "convert_categorical_to_ordinal": convert_categorical_to_ordinal,
     "map_to_zero_one": map_to_zero_one,
+    "debias_focal_predictor": debias_focal_predictor,
 }
 
 

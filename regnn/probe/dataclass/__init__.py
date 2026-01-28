@@ -7,6 +7,7 @@ from .regression import (
     VarianceInflationFactorProbe,
     L2NormProbe,
     ModeratedRegressionConfig,
+    DebiasConfig,
 )
 from .probe_config import (
     FrequencyType,
@@ -34,6 +35,7 @@ __all__ = [
     "Trajectory",
     "ObjectiveProbe",
     "ModeratedRegressionConfig",
+    "DebiasConfig",
     "OLSResultsProbe",
     "OLSModeratedResultsProbe",
     "VarianceInflationFactorProbe",

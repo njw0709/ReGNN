@@ -1,9 +1,30 @@
 from pydantic import Field, ConfigDict, field_validator, BaseModel
 from numpydantic import NDArray, Shape
 from .base import ProbeData
-from typing import Dict, Optional, List, Union, Literal
+from typing import Dict, Optional, List, Union, Literal, Any
 import math
 import numpy as np
+
+
+class DebiasConfig(BaseModel):
+    """Configuration for debiasing the focal predictor"""
+    
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+    
+    enabled: bool = Field(True, description="Whether to apply debiasing")
+    model_class: Optional[type] = Field(
+        None, 
+        description="Model class for debiasing (e.g., Ridge, RandomForestRegressor). If None, uses RandomForest"
+    )
+    k: int = Field(5, ge=2, description="Number of folds for cross-validation")
+    is_classifier: bool = Field(
+        False, 
+        description="True for binary focal predictor (propensity scores), False for continuous"
+    )
+    model_params: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional parameters to pass to the model"
+    )
 
 
 class ModeratedRegressionConfig(BaseModel):
@@ -15,6 +36,14 @@ class ModeratedRegressionConfig(BaseModel):
     moderators: Union[List[str], List[List[str]]]
     control_moderators: bool = Field(True)
     index_column_name: Union[str, List[str]]
+    debias_treatment: bool = Field(
+        False, 
+        description="Whether to debias the focal predictor"
+    )
+    debias_config: Optional[DebiasConfig] = Field(
+        None,
+        description="Advanced debiasing configuration. If None and debias_treatment=True, uses defaults"
+    )
 
 
 class OLSResultsProbe(ProbeData):
