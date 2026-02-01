@@ -219,15 +219,15 @@ def debias_focal_predictor(
     model_class: Optional[type] = None,
     k: int = 5,
     is_classifier: bool = False,
-    **model_params
+    **model_params,
 ) -> Tuple[pd.DataFrame, Dict]:
     """
     Debias the focal predictor using k-fold cross-validation.
-    
+
     This function removes the confounding effect of controlled predictors from
     the focal predictor by fitting models to predict the focal predictor from
     the controlled predictors, then computing residuals.
-    
+
     Args:
         df: DataFrame containing the data
         columns: List containing the focal predictor column name (should be length 1)
@@ -238,7 +238,7 @@ def debias_focal_predictor(
         is_classifier: True for binary focal predictor (uses propensity scores),
                       False for continuous focal predictor
         **model_params: Additional parameters to pass to the model
-    
+
     Returns:
         Tuple of (modified DataFrame, metadata dict)
         The metadata dict contains:
@@ -253,13 +253,13 @@ def debias_focal_predictor(
         raise ValueError("Can only debias one focal predictor at a time")
     if controlled_predictors is None or len(controlled_predictors) == 0:
         raise ValueError("Must specify controlled predictors")
-    
+
     focal_col = columns[0]
-    
+
     # Extract focal predictor and controlled predictors
     D = df[focal_col].values
     X = df[controlled_predictors].values
-    
+
     # Set default model if not provided
     if model_class is None:
         if is_classifier:
@@ -270,15 +270,15 @@ def debias_focal_predictor(
             model_class = RandomForestRegressor
             if not model_params:
                 model_params = {"n_estimators": 100, "random_state": 42}
-    
+
     # Call debias_treatment_kfold
     D_tilde, predictions, models = debias_treatment_kfold(
         X, D, model_class, k=k, is_classifier=is_classifier, **model_params
     )
-    
+
     # Replace focal predictor column with residuals
     df[focal_col] = D_tilde
-    
+
     # Return metadata for reverse transformation
     return_dict = {
         "models": models,
@@ -286,7 +286,7 @@ def debias_focal_predictor(
         "original_values": D.copy(),
         "controlled_predictors": list(controlled_predictors),
     }
-    
+
     return df, return_dict
 
 
@@ -297,11 +297,11 @@ def _reverse_debias_focal_predictor(
     predictions: Optional[np.ndarray] = None,
     original_values: Optional[np.ndarray] = None,
     controlled_predictors: Optional[Sequence[str]] = None,
-    **kwargs
+    **kwargs,
 ) -> Tuple[pd.DataFrame, Sequence[str]]:
     """
     Reverse the debiasing transformation by adding predictions back to residuals.
-    
+
     Args:
         df: DataFrame with debiased focal predictor
         columns: List containing the focal predictor column name
@@ -310,15 +310,15 @@ def _reverse_debias_focal_predictor(
         original_values: Original focal predictor values (fallback if predictions not available)
         controlled_predictors: List of controlled predictor column names
         **kwargs: Additional keyword arguments (ignored)
-    
+
     Returns:
         Tuple of (modified DataFrame, column names)
     """
     if columns is None or len(columns) == 0:
         raise ValueError("Must specify focal predictor column in 'columns' parameter")
-    
+
     focal_col = columns[0]
-    
+
     # Use original values if available (most accurate)
     if original_values is not None:
         df[focal_col] = original_values
@@ -329,11 +329,9 @@ def _reverse_debias_focal_predictor(
         raise ValueError(
             "Either 'original_values' or 'predictions' must be provided for reverse transformation"
         )
-    
+
     return df, columns
 
 
 debias_focal_predictor._reverse_transform = _reverse_debias_focal_predictor
 debias_focal_predictor.__name__ = "debias_focal_predictor"
-
-

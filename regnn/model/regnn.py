@@ -196,13 +196,13 @@ class IndexPredictionModel(nn.Module):
             # For single model, use the last hidden layer size
             if self.num_models == 1:
                 num_features = hidden_layer_sizes[-1]
-                self.bn = nn.BatchNorm1d(num_features, affine=True)
+                self.bn = nn.BatchNorm1d(num_features, affine=False)
             # For multiple models, sum the last hidden layer sizes
             else:
                 self.bns = nn.ModuleList()
                 for hs in hidden_layer_sizes:
                     num_features = hs[-1]
-                    self.bns.append(nn.BatchNorm1d(num_features, affine=True))
+                    self.bns.append(nn.BatchNorm1d(num_features, affine=False))
 
         if svd:
             assert svd_matrix is not None
@@ -359,7 +359,7 @@ class ReGNN(nn.Module):
             batch_norm=config.nn_config.batch_norm,
             vae=config.nn_config.vae,
             output_mu_var=config.nn_config.output_mu_var,
-            interaction_direction=config.interaction_direction,
+            # interaction_direction=config.interaction_direction,
             n_ensemble=config.nn_config.n_ensemble,
             use_closed_form_linear_weights=config.use_closed_form_linear_weights,
         )
@@ -381,7 +381,7 @@ class ReGNN(nn.Module):
         batch_norm: bool = True,
         vae: bool = True,
         output_mu_var: bool = True,
-        interaction_direction: str = "positive",
+        # interaction_direction: str = "positive",
         n_ensemble: int = 1,
         use_closed_form_linear_weights: bool = False,
     ):
@@ -411,11 +411,11 @@ class ReGNN(nn.Module):
 
         if not self.use_closed_form_linear_weights:
             self.focal_predictor_main_weight = nn.Parameter(torch.randn(1, 1))
-            self.predicted_index_weight = nn.Parameter(torch.randn(1, self.num_models))
+            # self.predicted_index_weight = nn.Parameter(torch.randn(1, self.num_models))
             self.intercept = nn.Parameter(torch.randn(1, 1))
             self.mmr_parameters = [
                 self.focal_predictor_main_weight,
-                self.predicted_index_weight,
+                # self.predicted_index_weight,
                 self.intercept,
             ]
             if self.has_linear_terms:
@@ -448,7 +448,7 @@ class ReGNN(nn.Module):
 
         if include_bias_focal_predictor:
             self.xf_bias = nn.Parameter(torch.randn(1, 1))
-        self.interaction_direction = interaction_direction
+        # self.interaction_direction = interaction_direction
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -528,22 +528,15 @@ class ReGNN(nn.Module):
         if not self.use_closed_form_linear_weights:
             # Calculate interaction term based on number of models
             if isinstance(predicted_index, list):
-                predicted_index_weight = torch.abs(self.predicted_index_weight).reshape(
-                    1, 1, self.predicted_index_weight.shape[1]
-                )  # Shape: (1, 1, num_models)
-                predicted_interaction_term = (
-                    predicted_index_weight * predicted_index
-                ).sum(
+                predicted_interaction_term = predicted_index.sum(
                     dim=-1, keepdim=True
                 )  # Shape: (batch_size, 1, 1)
             else:
-                predicted_interaction_term = (
-                    torch.abs(self.predicted_index_weight) * predicted_index
-                )
+                predicted_interaction_term = predicted_index
             predicted_interaction_term = predicted_interaction_term * focal_predictor
 
-            if self.interaction_direction != "positive":
-                predicted_interaction_term = -1.0 * predicted_interaction_term
+            # if self.interaction_direction != "positive":
+            #     predicted_interaction_term = -1.0 * predicted_interaction_term
 
             # Only compute controlled term if we have controlled variables
             linear_terms = (
