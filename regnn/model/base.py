@@ -41,24 +41,6 @@ class TreeConfig(BaseModel):
     device: str = Field("cpu", description="Device to run model on")
 
 
-class SVDConfig(BaseModel):
-    """Configuration for SVD dimensionality reduction"""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    enabled: bool = Field(False, description="Whether to use SVD")
-    k_dim: Optional[Union[int, List[int]]] = Field(10, description="SVD dimension")
-    svd_matrix: Optional[torch.Tensor] = Field(
-        None, description="Precomputed or computed SVD matrix"
-    )
-
-    @field_validator("k_dim")
-    def validate_k_dim(cls, v, values):
-        if values.data.get("enabled", False) and v is None:
-            raise ValueError("k_dim required when SVD is enabled")
-        return v
-
-
 class IndexPredictionConfig(MLPConfig):
     """Configuration for index prediction component"""
 
@@ -82,14 +64,6 @@ class IndexPredictionConfig(MLPConfig):
         gt=0.0,
         description="Sharpness of sigmoid routing in SoftTree (higher = sharper)",
     )
-    svd: SVDConfig = Field(default_factory=SVDConfig)
-
-    @field_validator("svd")
-    def validate_svd_k_dim(cls, v, values):
-        if v.enabled and isinstance(values.data.get("num_moderators"), int):
-            if v.k_dim > values.data["num_moderators"]:
-                raise ValueError("k_dim must be <= num_moderators")
-        return v
 
     @model_validator(mode="after")
     def validate_backbone_selection(self):
@@ -156,7 +130,6 @@ class ReGNNConfig(BaseModel):
             "batch_norm",
             "vae",
             "output_mu_var",
-            "svd",
             "n_ensemble",
             "use_resmlp",
             "use_soft_tree",

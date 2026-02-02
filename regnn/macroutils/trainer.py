@@ -14,7 +14,6 @@ from regnn.probe.dataclass.results import EarlyStoppingSignalProbeResult
 
 from .base import MacroConfig
 from .utils import (
-    compute_svd,
     setup_loss_and_optimizer,
     format_epoch_printout,
     balance_gradients_for_regnn,
@@ -79,34 +78,6 @@ def train(
     )
     print("train set: ", train_dataset)
     print("test set: ", test_dataset)
-
-    # SVD matrix computation remains the same, using train_dataset.config and regnn_model_cfg
-    if regnn_model_cfg.nn_config.svd.enabled:
-        moderator_columns = train_dataset.config.moderators
-        if isinstance(moderator_columns[0], list):
-            svd_matrices = []
-            for i, mod_list in enumerate(moderator_columns):
-                # Ensure df_orig is used if train_dataset.df might be a view/subset not suitable for direct SVD on all original moderators
-                # Assuming train_dataset.df_orig contains the full original data for these columns before any potential subsetting not reflected in config.moderators
-                moderators_np = train_dataset.df_orig[mod_list].to_numpy()
-                k_dim_svd = (
-                    regnn_model_cfg.nn_config.svd.k_dim[i]
-                    if isinstance(regnn_model_cfg.svd.k_dim, list)
-                    else regnn_model_cfg.nn_config.svd.k_dim
-                )
-                svd_matrix = compute_svd(moderators_np, k_dim=k_dim_svd)
-                svd_matrices.append(svd_matrix)
-            regnn_model_cfg.nn_config.svd.svd_matrix = svd_matrices
-        else:
-            moderators_np = train_dataset.df_orig[moderator_columns].to_numpy()
-            k_dim_svd = (
-                regnn_model_cfg.nn_config.svd.k_dim[0]
-                if isinstance(regnn_model_cfg.nn_config.svd.k_dim, list)
-                else regnn_model_cfg.nn_config.svd.k_dim
-            )
-            regnn_model_cfg.nn_config.svd.svd_matrix = compute_svd(
-                moderators_np, k_dim=k_dim_svd
-            )
 
     # 3. Model Initialization using from_config
     model = ReGNN.from_config(

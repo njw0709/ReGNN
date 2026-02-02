@@ -4,7 +4,7 @@ from regnn.macroutils import (
     train,
 )
 from regnn.data import DataFrameReadInConfig
-from regnn.model import ReGNNConfig, SVDConfig
+from regnn.model import ReGNNConfig
 from regnn.train import (
     TrainingHyperParams,
     MSELossConfig,
@@ -66,7 +66,7 @@ def main():
 
     # 1. Preprocessing
     # The preprocess function now takes DataFrameReadInConfig and ModeratedRegressionConfig directly.
-    all_dataset = preprocess(
+    all_dataset = read_and_preprocess(
         read_config=read_config, regression_config=regression_config
     )
 
@@ -83,7 +83,6 @@ def main():
         vae=False,
         output_mu_var=False,
         ensemble=False,
-        svd=SVDConfig(enabled=False),
         n_ensemble=1,
         include_bias_focal_predictor=True,
         control_moderators=False,

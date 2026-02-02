@@ -46,18 +46,6 @@ def load_model(
     return model
 
 
-def compute_svd(moderators_np: np.ndarray, k_dim=int) -> torch.Tensor:
-    _U, _S, V_computed = torch.pca_lowrank(
-        torch.from_numpy(moderators_np).to(torch.float32),
-        q=k_dim,
-        center=False,  # As per original logic
-        niter=10,  # As per original logic
-    )
-    V_computed = V_computed.to(torch.float32)
-    V_computed.requires_grad = False
-    return V_computed
-
-
 def setup_loss_and_optimizer(
     model: ReGNN,
     training_hyperparams: TrainingHyperParams,  # Use the specific type

@@ -1,7 +1,7 @@
 import pytest
 import torch
 import numpy as np
-from regnn.model.base import ReGNNConfig, SVDConfig
+from regnn.model.base import ReGNNConfig
 from regnn.model.regnn import ReGNN
 
 
@@ -76,27 +76,6 @@ def test_re_gnn_creation_without_vae_and_output_mu_var_false():
     model.train()
     batch_size = 2
     moderators = torch.randn(batch_size, 10)
-    focal_predictor = torch.randn(batch_size)
-    controlled_vars = torch.randn(batch_size, 5)
-    output = model(moderators, focal_predictor, controlled_vars)
-    assert output.shape == (batch_size, 1)
-
-
-def test_re_gnn_creation_with_svd():
-    num_moderators = 10
-    k_dim = 5
-    svd_matrix = np.random.rand(num_moderators, num_moderators).astype(np.float32)
-    config = ReGNNConfig.create(
-        num_moderators=num_moderators,
-        num_controlled=5,
-        layer_input_sizes=[5, 1],
-        svd=SVDConfig(enabled=True, svd_matrix=svd_matrix, k_dim=k_dim),
-    )
-    model = ReGNN.from_config(config)
-    assert isinstance(model, ReGNN)
-    model.train()
-    batch_size = 2
-    moderators = torch.randn(batch_size, num_moderators)
     focal_predictor = torch.randn(batch_size)
     controlled_vars = torch.randn(batch_size, 5)
     output = model(moderators, focal_predictor, controlled_vars)

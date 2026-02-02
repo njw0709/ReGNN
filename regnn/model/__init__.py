@@ -1,4 +1,4 @@
-from .base import ReGNNConfig, IndexPredictionConfig, SVDConfig, MLPConfig, TreeConfig
+from .base import ReGNNConfig, IndexPredictionConfig, MLPConfig, TreeConfig
 from .custom_loss import (
     vae_kld_regularized_loss,
     lasso_loss,
@@ -20,7 +20,6 @@ from .regnn import (
 __all__ = [
     "ReGNNConfig",
     "IndexPredictionConfig",
-    "SVDConfig",
     "MLPConfig",
     "TreeConfig",
     "vae_kld_regularized_loss",

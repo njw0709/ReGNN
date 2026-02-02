@@ -431,9 +431,6 @@ class IndexPredictionModel(nn.Module):
         return cls(
             num_moderators=config.num_moderators,
             hidden_layer_sizes=config.hidden_layer_sizes,
-            svd=config.svd.enabled,
-            svd_matrix=config.svd.svd_matrix,
-            k_dim=config.svd.k_dim,
             batch_norm=config.batch_norm,
             vae=config.vae,
             device=config.device,
@@ -450,11 +447,6 @@ class IndexPredictionModel(nn.Module):
         self,
         num_moderators: Union[int, Sequence[int]],
         hidden_layer_sizes: Union[Sequence[int], Sequence[Sequence[int]]],
-        svd: bool = False,
-        svd_matrix: Union[
-            None, torch.Tensor, Sequence[torch.Tensor], np.ndarray, Sequence[np.ndarray]
-        ] = None,
-        k_dim: Union[None, int, Sequence[int]] = 10,
         batch_norm: bool = True,
         vae: bool = True,
         device: str = "cpu",
@@ -480,11 +472,6 @@ class IndexPredictionModel(nn.Module):
 
         # if num_moderators is a list, then check following:
         if isinstance(num_moderators, list):
-            if svd:
-                assert isinstance(svd_matrix, list)
-                assert len(svd_matrix) == len(num_moderators)
-                assert isinstance(k_dim, list)
-                assert len(k_dim) == len(num_moderators)
             assert isinstance(hidden_layer_sizes[0], list)
             assert len(hidden_layer_sizes) == len(num_moderators)
             self.num_models = len(num_moderators)
@@ -502,28 +489,6 @@ class IndexPredictionModel(nn.Module):
                 for hs in hidden_layer_sizes:
                     num_features = hs[-1]
                     self.bns.append(nn.BatchNorm1d(num_features, affine=False))
-
-        if svd:
-            assert svd_matrix is not None
-            if isinstance(num_moderators, list):
-                for i in range(self.num_models):
-                    assert k_dim[i] <= num_moderators[i]
-                    num_moderators[i] = k_dim[i]
-                if not isinstance(svd_matrix[0], torch.Tensor):
-                    if device == "cuda":
-                        svd_matrix = [torch.Tensor(m).cuda() for m in svd_matrix]
-                    else:
-                        svd_matrix = [torch.Tensor(m) for m in svd_matrix]
-            else:
-                assert k_dim <= num_moderators
-                if not isinstance(svd_matrix, torch.Tensor):
-                    svd_matrix = torch.tensor(svd_matrix)
-                if device == "cuda":
-                    svd_matrix = svd_matrix.cuda()
-                num_moderators = k_dim
-            self.svd_matrix = svd_matrix
-            self.k_dim = k_dim
-        self.svd = svd
 
         if self.num_models == 1:
             if use_soft_tree:
@@ -656,8 +621,6 @@ class IndexPredictionModel(nn.Module):
 
     def forward(self, moderators: Union[torch.Tensor, Sequence[torch.Tensor]]):
         if self.num_models == 1:
-            if self.svd:
-                moderators = torch.matmul(moderators, self.svd_matrix[:, : self.k_dim])
             if self.vae:
                 if not self.training:
                     moderators, log_vars = self.mlp(moderators)
@@ -669,12 +632,6 @@ class IndexPredictionModel(nn.Module):
             else:
                 moderators = self.mlp(moderators)
         else:
-            if self.svd:
-                moderators = [
-                    torch.matmul(moderators[i], self.svd_matrix[i][:, : self.k_dim[i]])
-                    for i in range(self.num_models)
-                ]
-
             outputs = [self.mlp[i](moderators[i]) for i in range(self.num_models)]
             if self.vae:
                 if not self.training:
@@ -735,9 +692,6 @@ class ReGNN(nn.Module):
             hidden_layer_sizes=config.nn_config.hidden_layer_sizes,
             include_bias_focal_predictor=config.include_bias_focal_predictor,
             dropout=config.nn_config.dropout,
-            svd=config.nn_config.svd.enabled,
-            svd_matrix=config.nn_config.svd.svd_matrix,
-            k_dim=config.nn_config.svd.k_dim,
             device=config.nn_config.device,
             control_moderators=config.control_moderators,
             batch_norm=config.nn_config.batch_norm,
@@ -759,11 +713,6 @@ class ReGNN(nn.Module):
         hidden_layer_sizes: Union[int, Sequence[int]],
         include_bias_focal_predictor=True,
         dropout=0.5,
-        svd: bool = False,
-        svd_matrix: Union[
-            None, torch.Tensor, Sequence[torch.Tensor], np.ndarray, Sequence[np.ndarray]
-        ] = None,
-        k_dim: Union[None, int, Sequence[int]] = 10,
         device: str = "cpu",
         control_moderators: bool = False,
         batch_norm: bool = True,
@@ -824,9 +773,6 @@ class ReGNN(nn.Module):
         self.index_prediction_model = IndexPredictionModel(
             num_moderators,
             hidden_layer_sizes,
-            svd=svd,
-            svd_matrix=svd_matrix,
-            k_dim=k_dim,
             batch_norm=batch_norm,
             vae=vae,
             output_mu_var=output_mu_var,
