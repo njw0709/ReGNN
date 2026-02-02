@@ -17,9 +17,6 @@ class MLPConfig(BaseModel):
     output_mu_var: bool = Field(
         False, description="Whether to output mean and variance"
     )
-    ensemble: bool = Field(
-        False, description="Whether the model is a part of an ensemble"
-    )
 
     @property
     def hidden_layer_sizes(self) -> Union[List[int], List[List[int]]]:
@@ -57,12 +54,6 @@ class IndexPredictionConfig(MLPConfig):
     )
     n_ensemble: int = Field(1, ge=1, description="Number of MLP models to ensemble")
     svd: SVDConfig = Field(default_factory=SVDConfig)
-
-    @field_validator("n_ensemble")
-    def validate_ensemble(cls, v, values):
-        if v > 1 and not values.data.get("ensemble", False):
-            raise ValueError("ensemble must be True when n_ensemble > 1")
-        return v
 
     @field_validator("svd")
     def validate_svd_k_dim(cls, v, values):
@@ -116,7 +107,6 @@ class ReGNNConfig(BaseModel):
             "batch_norm",
             "vae",
             "output_mu_var",
-            "ensemble",
             "svd",
             "n_ensemble",
         }

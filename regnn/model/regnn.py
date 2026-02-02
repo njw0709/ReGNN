@@ -8,32 +8,25 @@ from .base import MLPConfig, IndexPredictionConfig, ReGNNConfig
 
 
 class MLP(nn.Module):
+    """Simple feedforward neural network with GELU activations and optional dropout."""
+
     @classmethod
     def from_config(cls, config: MLPConfig):
         return cls(
             layer_input_sizes=config.layer_input_sizes,
-            vae=config.vae,
             dropout=config.dropout,
             device=config.device,
-            output_mu_var=config.output_mu_var,
-            ensemble=config.ensemble,
         )
 
     def __init__(
         self,
         layer_input_sizes: List[int],
-        vae: bool = False,
         dropout: float = 0.0,
         device: str = "cpu",
-        output_mu_var: bool = False,
-        ensemble: bool = False,
     ):
         super(MLP, self).__init__()
-        self.vae = vae
-        self.ensemble = ensemble
         self.layer_input_sizes = layer_input_sizes
         self.num_layers = len(layer_input_sizes) - 1
-        self.output_mu_var = output_mu_var
         self.dropout_rate = dropout
         if self.dropout_rate > 0.0:
             self.dropout = nn.Dropout(dropout)
@@ -41,49 +34,69 @@ class MLP(nn.Module):
         self.layers = nn.ModuleList(
             [
                 nn.Linear(layer_input_sizes[i], layer_input_sizes[i + 1])
-                for i in range(self.num_layers - 1)
+                for i in range(self.num_layers)
             ]
         )
-        if self.vae:
-            self.mu = nn.Linear(layer_input_sizes[-2], layer_input_sizes[-1])
-            self.logvar = nn.Linear(layer_input_sizes[-2], layer_input_sizes[-1])
-        else:
-            self.output_layer = nn.Linear(layer_input_sizes[-2], layer_input_sizes[-1])
-
-    def reparametrization(self, mu, logvar):
-        epsilon = torch.randn_like(logvar)
-        return mu + torch.exp(logvar / 2) * epsilon
 
     def forward(self, x):
-        for i, layer in enumerate(self.layers):
+        for i, layer in enumerate(self.layers[:-1]):
             x = F.gelu(layer(x))
             if self.dropout_rate > 0.0:
                 x = self.dropout(x)
-        if self.vae:
-            mu = self.mu(x)
-            logvar = self.logvar(x)
-            if self.ensemble:
-                return mu, logvar
-            else:
-                out = self.reparametrization(mu, logvar)
-                if not self.training:
-                    return mu, logvar
-                if self.output_mu_var:
-                    return out, mu, logvar
-                else:
-                    return out
-        else:
-            out = self.output_layer(x)
-            return out
+        # Final layer without activation
+        x = self.layers[-1](x)
+        return x
 
 
 class MLPEnsemble(nn.Module):
+    """Ensemble of MLP models that averages their outputs."""
+
     @classmethod
     def from_config(cls, config: MLPConfig, n_ensemble):
         return cls(
             n_models=n_ensemble,
             layer_input_sizes=config.layer_input_sizes,
-            vae=config.vae,
+            dropout=config.dropout,
+            device=config.device,
+        )
+
+    def __init__(
+        self,
+        n_models,
+        layer_input_sizes,
+        dropout: float = 0.0,
+        device: str = "cpu",
+    ):
+        super(MLPEnsemble, self).__init__()
+        self.models = nn.ModuleList(
+            [
+                MLP(
+                    layer_input_sizes,
+                    dropout=dropout,
+                    device=device,
+                )
+                for _ in range(n_models)
+            ]
+        )
+
+    def forward(self, x):
+        outputs = [model(x) for model in self.models]
+        avg_output = torch.mean(torch.stack(outputs), dim=0)
+        return avg_output
+
+
+class VAE(nn.Module):
+    """Variational Autoencoder that wraps MLP or MLPEnsemble.
+
+    Outputs mu and logvar for variational inference. Can wrap either a single MLP
+    or an ensemble of MLPs based on n_ensemble parameter.
+    """
+
+    @classmethod
+    def from_config(cls, config: MLPConfig, n_ensemble: int = 1):
+        return cls(
+            layer_input_sizes=config.layer_input_sizes,
+            n_ensemble=n_ensemble,
             dropout=config.dropout,
             device=config.device,
             output_mu_var=config.output_mu_var,
@@ -91,51 +104,59 @@ class MLPEnsemble(nn.Module):
 
     def __init__(
         self,
-        n_models,
-        layer_input_sizes,
-        vae: bool = False,
+        layer_input_sizes: List[int],
+        n_ensemble: int = 1,
         dropout: float = 0.0,
         device: str = "cpu",
         output_mu_var: bool = False,
     ):
-        super(MLPEnsemble, self).__init__()
-        self.vae = vae
+        super(VAE, self).__init__()
         self.output_mu_var = output_mu_var
-        self.models = nn.ModuleList(
-            [
-                MLP(
-                    layer_input_sizes,
-                    vae=vae,
-                    dropout=dropout,
-                    device=device,
-                    ensemble=True,
-                )
-                for _ in range(n_models)
-            ]
-        )
+        self.device = device
+        self.latent_dim = layer_input_sizes[-1]
+
+        # Double the output dimension to accommodate both mu and logvar
+        modified_layer_sizes = layer_input_sizes[:-1] + [layer_input_sizes[-1] * 2]
+
+        # Create either MLP or MLPEnsemble based on n_ensemble
+        if n_ensemble == 1:
+            self.base_model = MLP(
+                layer_input_sizes=modified_layer_sizes,
+                dropout=dropout,
+                device=device,
+            )
+        else:
+            self.base_model = MLPEnsemble(
+                n_models=n_ensemble,
+                layer_input_sizes=modified_layer_sizes,
+                dropout=dropout,
+                device=device,
+            )
+
+    def reparametrization(self, mu, logvar):
+        """Reparameterization trick: z = mu + exp(logvar/2) * epsilon"""
+        epsilon = torch.randn_like(logvar)
+        return mu + torch.exp(logvar / 2) * epsilon
 
     def forward(self, x):
-        if self.vae:
-            mus = []
-            log_vars = []
-            for model in self.models:
-                output = model(x)
-                mus.append(output[0])
-                log_vars.append(output[1])
-            avg_mu = torch.mean(torch.stack(mus), dim=0)
-            avg_log_vars = torch.mean(torch.stack(log_vars), dim=0)
-            avg_output = model.reparametrization(avg_mu, avg_log_vars)
-            if not self.training:
-                return avg_mu, avg_log_vars
-            else:
-                if self.output_mu_var:
-                    return avg_output, avg_mu, avg_log_vars
-                else:
-                    return avg_output
+        # Get output from base model
+        out = self.base_model(x)
+
+        # Split output into mu and logvar
+        mu = out[..., : self.latent_dim]
+        logvar = out[..., self.latent_dim :]
+
+        # Evaluation mode: always return (mu, logvar)
+        if not self.training:
+            return mu, logvar
+
+        # Training mode with reparameterization
+        z = self.reparametrization(mu, logvar)
+
+        if self.output_mu_var:
+            return z, mu, logvar
         else:
-            outputs = [model(x) for model in self.models]
-            avg_output = torch.mean(torch.stack(outputs), dim=0)
-            return avg_output
+            return z
 
 
 class IndexPredictionModel(nn.Module):
@@ -230,20 +251,25 @@ class IndexPredictionModel(nn.Module):
             self.num_layers = len(hidden_layer_sizes)
             layer_input_sizes = [num_moderators] + hidden_layer_sizes
 
-            if n_ensemble > 1:
+            if self.vae:
+                # Use VAE wrapper which handles both single and ensemble internally
+                self.mlp = VAE(
+                    layer_input_sizes=layer_input_sizes,
+                    n_ensemble=n_ensemble,
+                    output_mu_var=output_mu_var,
+                    dropout=dropout,
+                    device=device,
+                )
+            elif n_ensemble > 1:
                 self.mlp = MLPEnsemble(
                     n_ensemble,
                     layer_input_sizes,
-                    vae=self.vae,
-                    output_mu_var=output_mu_var,
                     dropout=dropout,
                     device=device,
                 )
             else:
                 self.mlp = MLP(
                     layer_input_sizes,
-                    vae=self.vae,
-                    output_mu_var=output_mu_var,
                     dropout=dropout,
                     device=device,
                 )
@@ -256,13 +282,22 @@ class IndexPredictionModel(nn.Module):
             self.mlp = []
             for i in range(self.num_models):
                 layer_input_sizes = [num_moderators[i]] + hidden_layer_sizes[i]
-                if n_ensemble > 1:
+                if self.vae:
+                    # Use VAE wrapper which handles both single and ensemble internally
+                    self.mlp.append(
+                        VAE(
+                            layer_input_sizes=layer_input_sizes,
+                            n_ensemble=n_ensemble,
+                            output_mu_var=output_mu_var,
+                            dropout=dropout,
+                            device=device,
+                        )
+                    )
+                elif n_ensemble > 1:
                     self.mlp.append(
                         MLPEnsemble(
                             n_ensemble,
                             layer_input_sizes,
-                            vae=self.vae,
-                            output_mu_var=output_mu_var,
                             dropout=dropout,
                             device=device,
                         )
@@ -271,8 +306,6 @@ class IndexPredictionModel(nn.Module):
                     self.mlp.append(
                         MLP(
                             layer_input_sizes,
-                            vae=self.vae,
-                            output_mu_var=output_mu_var,
                             dropout=dropout,
                             device=device,
                         )
@@ -406,6 +439,8 @@ class ReGNN(nn.Module):
                 num_linear = num_controlled + sum(num_moderators)
             else:
                 num_linear = num_controlled + num_moderators
+        else:
+            num_linear = num_controlled
         # Only create controlled_var_weights if we have controlled variables
         self.has_linear_terms = num_linear > 0
 
@@ -491,7 +526,7 @@ class ReGNN(nn.Module):
         # shapes: moderators: (batch, 1, n); focal_predictor: (batch, 1, 1);
         # threshold focal predictor if indicated.
 
-        if focal_predictor.ndim == 2:
+        if focal_predictor.ndim == 1:
             focal_predictor = torch.unsqueeze(focal_predictor, 1)
 
         if self.include_bias_focal_predictor:
