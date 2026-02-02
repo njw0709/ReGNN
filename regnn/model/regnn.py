@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import torch.nn.init as init
 from typing import Union, Sequence, List
 import numpy as np
-from .base import MLPConfig, IndexPredictionConfig, ReGNNConfig
+from .base import MLPConfig, IndexPredictionConfig, ReGNNConfig, TreeConfig
 
 
 class MLP(nn.Module):
@@ -115,6 +115,150 @@ class ResMLP(nn.Module):
         return x
 
 
+class SoftTree(nn.Module):
+    """Soft Decision Tree with learnable routing through internal nodes.
+
+    Based on "Distilling a Neural Network Into a Soft Decision Tree" (Frosst & Hinton, 2017).
+    Uses sigmoid functions at internal nodes for probabilistic routing to leaf nodes.
+    """
+
+    @classmethod
+    def from_config(cls, config: TreeConfig):
+        return cls(
+            input_dim=config.input_dim,
+            output_dim=config.output_dim,
+            depth=config.depth,
+            sharpness=config.sharpness,
+            dropout=config.dropout,
+            device=config.device,
+        )
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        depth: int = 5,
+        sharpness: float = 1.0,
+        dropout: float = 0.0,
+        device: str = "cpu",
+    ):
+        super(SoftTree, self).__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.depth = depth
+        self.sharpness = sharpness
+        self.dropout_rate = dropout
+        self.device = device
+
+        # Number of internal nodes and leaf nodes
+        self.num_internal_nodes = 2**depth - 1
+        self.num_leaf_nodes = 2**depth
+
+        # Dropout layer
+        if self.dropout_rate > 0.0:
+            self.dropout = nn.Dropout(dropout)
+
+        # Internal node parameters (linear transformations for routing decisions)
+        # Each internal node has a linear layer: input_dim -> 1
+        self.internal_node_weights = nn.Parameter(
+            torch.randn(self.num_internal_nodes, input_dim)
+        )
+        self.internal_node_bias = nn.Parameter(torch.randn(self.num_internal_nodes))
+
+        # Leaf node parameters (output values)
+        self.leaf_weights = nn.Parameter(torch.randn(self.num_leaf_nodes, output_dim))
+
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        """Initialize weights using Xavier/Glorot initialization."""
+        init.xavier_uniform_(self.internal_node_weights)
+        init.zeros_(self.internal_node_bias)
+        init.xavier_uniform_(self.leaf_weights)
+
+    def forward(self, x):
+        """Forward pass through the soft decision tree.
+
+        Args:
+            x: Input tensor of shape (batch_size, input_dim) or (batch_size, 1, input_dim)
+
+        Returns:
+            Output tensor of shape (batch_size, output_dim)
+        """
+        # Handle 3D input (batch_size, 1, input_dim)
+        if x.dim() == 3:
+            x = x.squeeze(1)
+
+        batch_size = x.size(0)
+
+        # Apply dropout if enabled
+        if self.dropout_rate > 0.0 and self.training:
+            x = self.dropout(x)
+
+        # Compute routing probabilities for all internal nodes
+        # Shape: (batch_size, num_internal_nodes)
+        routing_logits = (
+            torch.matmul(x, self.internal_node_weights.t()) + self.internal_node_bias
+        )
+        # Apply sharpness parameter to control sigmoid steepness
+        routing_probs = torch.sigmoid(self.sharpness * routing_logits)
+
+        # Compute path probabilities to each leaf
+        # We'll use dynamic programming to compute probabilities efficiently
+        leaf_probs = self._compute_leaf_probabilities(routing_probs)
+
+        # Compute weighted sum of leaf outputs
+        # Shape: (batch_size, num_leaf_nodes) @ (num_leaf_nodes, output_dim) -> (batch_size, output_dim)
+        output = torch.matmul(leaf_probs, self.leaf_weights)
+
+        return output
+
+    def _compute_leaf_probabilities(self, routing_probs):
+        """Compute the probability of reaching each leaf node.
+
+        For a binary tree:
+        - Left child (0): probability = parent_prob * routing_prob
+        - Right child (1): probability = parent_prob * (1 - routing_prob)
+
+        Args:
+            routing_probs: Tensor of shape (batch_size, num_internal_nodes)
+
+        Returns:
+            Tensor of shape (batch_size, num_leaf_nodes)
+        """
+        batch_size = routing_probs.size(0)
+
+        # Initialize path probabilities for all nodes (internal + leaf)
+        # Total nodes in complete binary tree = 2^(depth+1) - 1
+        total_nodes = 2 ** (self.depth + 1) - 1
+        path_probs = torch.zeros(batch_size, total_nodes, device=self.device)
+
+        # Root node has probability 1
+        path_probs[:, 0] = 1.0
+
+        # Traverse tree level by level to compute path probabilities
+        for node_idx in range(self.num_internal_nodes):
+            left_child_idx = 2 * node_idx + 1
+            right_child_idx = 2 * node_idx + 2
+
+            # Probability of going left
+            path_probs[:, left_child_idx] = (
+                path_probs[:, node_idx] * routing_probs[:, node_idx]
+            )
+            # Probability of going right
+            path_probs[:, right_child_idx] = path_probs[:, node_idx] * (
+                1 - routing_probs[:, node_idx]
+            )
+
+        # Extract leaf node probabilities (last num_leaf_nodes in the tree)
+        leaf_start_idx = self.num_internal_nodes
+        leaf_probs = path_probs[
+            :, leaf_start_idx : leaf_start_idx + self.num_leaf_nodes
+        ]
+
+        return leaf_probs
+
+
 class MLPEnsemble(nn.Module):
     """Ensemble of MLP or ResMLP models that averages their outputs."""
 
@@ -142,6 +286,52 @@ class MLPEnsemble(nn.Module):
             [
                 model_class(
                     layer_input_sizes,
+                    dropout=dropout,
+                    device=device,
+                )
+                for _ in range(n_models)
+            ]
+        )
+
+    def forward(self, x):
+        outputs = [model(x) for model in self.models]
+        avg_output = torch.mean(torch.stack(outputs), dim=0)
+        return avg_output
+
+
+class SoftTreeEnsemble(nn.Module):
+    """Ensemble of SoftTree models that averages their outputs."""
+
+    @classmethod
+    def from_config(cls, config: TreeConfig, n_ensemble: int):
+        return cls(
+            n_models=n_ensemble,
+            input_dim=config.input_dim,
+            output_dim=config.output_dim,
+            depth=config.depth,
+            sharpness=config.sharpness,
+            dropout=config.dropout,
+            device=config.device,
+        )
+
+    def __init__(
+        self,
+        n_models: int,
+        input_dim: int,
+        output_dim: int,
+        depth: int = 5,
+        sharpness: float = 1.0,
+        dropout: float = 0.0,
+        device: str = "cpu",
+    ):
+        super(SoftTreeEnsemble, self).__init__()
+        self.models = nn.ModuleList(
+            [
+                SoftTree(
+                    input_dim=input_dim,
+                    output_dim=output_dim,
+                    depth=depth,
+                    sharpness=sharpness,
                     dropout=dropout,
                     device=device,
                 )
@@ -251,6 +441,9 @@ class IndexPredictionModel(nn.Module):
             n_ensemble=config.n_ensemble,
             output_mu_var=config.output_mu_var,
             use_resmlp=config.use_resmlp,
+            use_soft_tree=config.use_soft_tree,
+            tree_depth=config.tree_depth,
+            tree_sharpness=config.tree_sharpness,
         )
 
     def __init__(
@@ -269,6 +462,9 @@ class IndexPredictionModel(nn.Module):
         n_ensemble: int = 1,
         output_mu_var: bool = True,
         use_resmlp: bool = False,
+        use_soft_tree: bool = False,
+        tree_depth: int = None,
+        tree_sharpness: float = 1.0,
     ):
         super(IndexPredictionModel, self).__init__()
         self.vae = vae
@@ -278,6 +474,9 @@ class IndexPredictionModel(nn.Module):
         self.dropout_rate = dropout
         self.n_ensemble = n_ensemble
         self.use_resmlp = use_resmlp
+        self.use_soft_tree = use_soft_tree
+        self.tree_depth = tree_depth
+        self.tree_sharpness = tree_sharpness
 
         # if num_moderators is a list, then check following:
         if isinstance(num_moderators, list):
@@ -327,74 +526,133 @@ class IndexPredictionModel(nn.Module):
         self.svd = svd
 
         if self.num_models == 1:
-            self.num_layers = len(hidden_layer_sizes)
-            layer_input_sizes = [num_moderators] + hidden_layer_sizes
+            if use_soft_tree:
+                # SoftTree backbone (VAE not supported)
+                input_dim = num_moderators
+                output_dim = hidden_layer_sizes[-1]
 
-            if self.vae:
-                # Use VAE wrapper which handles both single and ensemble internally
-                self.mlp = VAE(
-                    layer_input_sizes=layer_input_sizes,
-                    n_ensemble=n_ensemble,
-                    output_mu_var=output_mu_var,
-                    dropout=dropout,
-                    device=device,
-                    use_resmlp=use_resmlp,
-                )
-            elif n_ensemble > 1:
-                self.mlp = MLPEnsemble(
-                    n_ensemble,
-                    layer_input_sizes,
-                    dropout=dropout,
-                    device=device,
-                    use_resmlp=use_resmlp,
-                )
+                if n_ensemble > 1:
+                    self.mlp = SoftTreeEnsemble(
+                        n_models=n_ensemble,
+                        input_dim=input_dim,
+                        output_dim=output_dim,
+                        depth=tree_depth,
+                        sharpness=tree_sharpness,
+                        dropout=dropout,
+                        device=device,
+                    )
+                else:
+                    self.mlp = SoftTree(
+                        input_dim=input_dim,
+                        output_dim=output_dim,
+                        depth=tree_depth,
+                        sharpness=tree_sharpness,
+                        dropout=dropout,
+                        device=device,
+                    )
             else:
-                model_class = ResMLP if use_resmlp else MLP
-                self.mlp = model_class(
-                    layer_input_sizes,
-                    dropout=dropout,
-                    device=device,
-                )
+                # MLP/ResMLP backbone
+                self.num_layers = len(hidden_layer_sizes)
+                layer_input_sizes = [num_moderators] + hidden_layer_sizes
 
-        else:
-            self.num_layers = [
-                len(hidden_layer_sizes[i]) for i in range(self.num_models)
-            ]
-            # final layer gets added later if add_final_layer = True
-            self.mlp = []
-            for i in range(self.num_models):
-                layer_input_sizes = [num_moderators[i]] + hidden_layer_sizes[i]
                 if self.vae:
                     # Use VAE wrapper which handles both single and ensemble internally
-                    self.mlp.append(
-                        VAE(
-                            layer_input_sizes=layer_input_sizes,
-                            n_ensemble=n_ensemble,
-                            output_mu_var=output_mu_var,
-                            dropout=dropout,
-                            device=device,
-                            use_resmlp=use_resmlp,
-                        )
+                    self.mlp = VAE(
+                        layer_input_sizes=layer_input_sizes,
+                        n_ensemble=n_ensemble,
+                        output_mu_var=output_mu_var,
+                        dropout=dropout,
+                        device=device,
+                        use_resmlp=use_resmlp,
                     )
                 elif n_ensemble > 1:
-                    self.mlp.append(
-                        MLPEnsemble(
-                            n_ensemble,
-                            layer_input_sizes,
-                            dropout=dropout,
-                            device=device,
-                            use_resmlp=use_resmlp,
-                        )
+                    self.mlp = MLPEnsemble(
+                        n_ensemble,
+                        layer_input_sizes,
+                        dropout=dropout,
+                        device=device,
+                        use_resmlp=use_resmlp,
                     )
                 else:
                     model_class = ResMLP if use_resmlp else MLP
-                    self.mlp.append(
-                        model_class(
-                            layer_input_sizes,
-                            dropout=dropout,
-                            device=device,
-                        )
+                    self.mlp = model_class(
+                        layer_input_sizes,
+                        dropout=dropout,
+                        device=device,
                     )
+
+        else:
+            # Multiple models case
+            if use_soft_tree:
+                # SoftTree backbone for multiple models (VAE not supported)
+                self.mlp = []
+                for i in range(self.num_models):
+                    input_dim = num_moderators[i]
+                    output_dim = hidden_layer_sizes[i][-1]
+
+                    if n_ensemble > 1:
+                        self.mlp.append(
+                            SoftTreeEnsemble(
+                                n_models=n_ensemble,
+                                input_dim=input_dim,
+                                output_dim=output_dim,
+                                depth=tree_depth,
+                                sharpness=tree_sharpness,
+                                dropout=dropout,
+                                device=device,
+                            )
+                        )
+                    else:
+                        self.mlp.append(
+                            SoftTree(
+                                input_dim=input_dim,
+                                output_dim=output_dim,
+                                depth=tree_depth,
+                                sharpness=tree_sharpness,
+                                dropout=dropout,
+                                device=device,
+                            )
+                        )
+            else:
+                # MLP/ResMLP backbone for multiple models
+                self.num_layers = [
+                    len(hidden_layer_sizes[i]) for i in range(self.num_models)
+                ]
+                # final layer gets added later if add_final_layer = True
+                self.mlp = []
+                for i in range(self.num_models):
+                    layer_input_sizes = [num_moderators[i]] + hidden_layer_sizes[i]
+                    if self.vae:
+                        # Use VAE wrapper which handles both single and ensemble internally
+                        self.mlp.append(
+                            VAE(
+                                layer_input_sizes=layer_input_sizes,
+                                n_ensemble=n_ensemble,
+                                output_mu_var=output_mu_var,
+                                dropout=dropout,
+                                device=device,
+                                use_resmlp=use_resmlp,
+                            )
+                        )
+                    elif n_ensemble > 1:
+                        self.mlp.append(
+                            MLPEnsemble(
+                                n_ensemble,
+                                layer_input_sizes,
+                                dropout=dropout,
+                                device=device,
+                                use_resmlp=use_resmlp,
+                            )
+                        )
+                    else:
+                        model_class = ResMLP if use_resmlp else MLP
+                        self.mlp.append(
+                            model_class(
+                                layer_input_sizes,
+                                dropout=dropout,
+                                device=device,
+                            )
+                        )
 
     def forward(self, moderators: Union[torch.Tensor, Sequence[torch.Tensor]]):
         if self.num_models == 1:
@@ -447,7 +705,15 @@ class IndexPredictionModel(nn.Module):
                     moderators = torch.unsqueeze(moderators, 1)
                 predicted_index = self.bn(moderators)
         else:
-            predicted_index = moderators
+            # Ensure proper shape for predicted_index (batch, 1, features)
+            if isinstance(moderators, list):
+                predicted_index = moderators
+            else:
+                if moderators.dim() == 2:
+                    # Add middle dimension for consistency
+                    predicted_index = moderators.unsqueeze(1)
+                else:
+                    predicted_index = moderators
         if self.vae:
             if not self.training:
                 return predicted_index, log_vars
@@ -481,6 +747,9 @@ class ReGNN(nn.Module):
             n_ensemble=config.nn_config.n_ensemble,
             use_closed_form_linear_weights=config.use_closed_form_linear_weights,
             use_resmlp=config.nn_config.use_resmlp,
+            use_soft_tree=config.nn_config.use_soft_tree,
+            tree_depth=config.nn_config.tree_depth,
+            tree_sharpness=config.nn_config.tree_sharpness,
         )
 
     def __init__(
@@ -504,6 +773,9 @@ class ReGNN(nn.Module):
         n_ensemble: int = 1,
         use_closed_form_linear_weights: bool = False,
         use_resmlp: bool = False,
+        use_soft_tree: bool = False,
+        tree_depth: int = None,
+        tree_sharpness: float = 1.0,
     ):
         super(ReGNN, self).__init__()
         self.vae = vae
@@ -562,6 +834,9 @@ class ReGNN(nn.Module):
             dropout=dropout,
             n_ensemble=n_ensemble,
             use_resmlp=use_resmlp,
+            use_soft_tree=use_soft_tree,
+            tree_depth=tree_depth,
+            tree_sharpness=tree_sharpness,
         )
 
         self.device = device

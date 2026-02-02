@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from typing import List, Union, Optional
 import torch
 
@@ -24,6 +24,21 @@ class MLPConfig(BaseModel):
         if isinstance(self.layer_input_sizes[0], list):
             return [sizes + [1] for sizes in self.layer_input_sizes]
         return self.layer_input_sizes + [1]
+
+
+class TreeConfig(BaseModel):
+    """Configuration for SoftTree architecture"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    input_dim: int = Field(..., description="Input feature dimension")
+    output_dim: int = Field(..., description="Output dimension")
+    depth: int = Field(5, ge=1, description="Tree depth (number of levels)")
+    sharpness: float = Field(
+        1.0, gt=0.0, description="Sharpness of sigmoid routing (higher = sharper)"
+    )
+    dropout: float = Field(0.0, ge=0.0, le=1.0, description="Dropout rate")
+    device: str = Field("cpu", description="Device to run model on")
 
 
 class SVDConfig(BaseModel):
@@ -52,8 +67,21 @@ class IndexPredictionConfig(MLPConfig):
     num_moderators: Union[int, List[int]] = Field(
         ..., description="Number of moderator variables"
     )
-    n_ensemble: int = Field(1, ge=1, description="Number of MLP models to ensemble")
-    use_resmlp: bool = Field(False, description="Whether to use ResidualMLP instead of MLP")
+    n_ensemble: int = Field(1, ge=1, description="Number of models to ensemble")
+    use_resmlp: bool = Field(
+        False, description="Whether to use ResidualMLP instead of MLP"
+    )
+    use_soft_tree: bool = Field(
+        False, description="Whether to use SoftTree instead of MLP/ResMLP"
+    )
+    tree_depth: Optional[int] = Field(
+        None, ge=1, description="Tree depth when use_soft_tree=True"
+    )
+    tree_sharpness: float = Field(
+        1.0,
+        gt=0.0,
+        description="Sharpness of sigmoid routing in SoftTree (higher = sharper)",
+    )
     svd: SVDConfig = Field(default_factory=SVDConfig)
 
     @field_validator("svd")
@@ -62,6 +90,26 @@ class IndexPredictionConfig(MLPConfig):
             if v.k_dim > values.data["num_moderators"]:
                 raise ValueError("k_dim must be <= num_moderators")
         return v
+
+    @model_validator(mode="after")
+    def validate_backbone_selection(self):
+        # Ensure mutual exclusivity between use_resmlp and use_soft_tree
+        if self.use_resmlp and self.use_soft_tree:
+            raise ValueError(
+                "Cannot use both use_resmlp and use_soft_tree simultaneously"
+            )
+
+        # Ensure tree_depth is provided when using SoftTree
+        if self.use_soft_tree and self.tree_depth is None:
+            raise ValueError("tree_depth must be provided when use_soft_tree=True")
+
+        # VAE is not supported with SoftTree
+        if self.use_soft_tree and self.vae:
+            raise ValueError(
+                "VAE is not supported with SoftTree. Set vae=False when use_soft_tree=True"
+            )
+
+        return self
 
 
 class ReGNNConfig(BaseModel):
@@ -111,6 +159,9 @@ class ReGNNConfig(BaseModel):
             "svd",
             "n_ensemble",
             "use_resmlp",
+            "use_soft_tree",
+            "tree_depth",
+            "tree_sharpness",
         }
 
         # Split kwargs between nn_config and main config

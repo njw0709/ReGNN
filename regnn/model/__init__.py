@@ -1,4 +1,4 @@
-from .base import ReGNNConfig, IndexPredictionConfig, SVDConfig, MLPConfig
+from .base import ReGNNConfig, IndexPredictionConfig, SVDConfig, MLPConfig, TreeConfig
 from .custom_loss import (
     vae_kld_regularized_loss,
     lasso_loss,
@@ -6,13 +6,23 @@ from .custom_loss import (
     ridge_loss,
 )
 from .modelutils import SklearnCompatibleModel
-from .regnn import MLP, ResMLP, MLPEnsemble, VAE, IndexPredictionModel, ReGNN
+from .regnn import (
+    MLP,
+    ResMLP,
+    MLPEnsemble,
+    SoftTree,
+    SoftTreeEnsemble,
+    VAE,
+    IndexPredictionModel,
+    ReGNN,
+)
 
 __all__ = [
     "ReGNNConfig",
     "IndexPredictionConfig",
     "SVDConfig",
     "MLPConfig",
+    "TreeConfig",
     "vae_kld_regularized_loss",
     "lasso_loss",
     "elasticnet_loss",
@@ -21,6 +31,8 @@ __all__ = [
     "MLP",
     "ResMLP",
     "MLPEnsemble",
+    "SoftTree",
+    "SoftTreeEnsemble",
     "VAE",
     "IndexPredictionModel",
     "ReGNN",
