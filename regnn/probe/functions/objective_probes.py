@@ -9,7 +9,12 @@ from ..dataclass.probe_config import (
     FrequencyType,
 )
 from ..dataclass.nn import ObjectiveProbe
-from regnn.train import TrainingHyperParams, KLDLossConfig, MSELossConfig
+from regnn.train import (
+    TrainingHyperParams,
+    KLDLossConfig,
+    MSELossConfig,
+    TreeLossConfig,
+)
 from regnn.macroutils.utils import (
     setup_loss_and_optimizer,
 )  # For consistent loss calculation
@@ -137,6 +142,12 @@ def objective_probe(
                     output_mu, output_log_var = predictions
                     batch_main_loss_tensor = loss_fn_callable(
                         output_mu, output_log_var, targets, output_mu
+                    )
+                elif isinstance(loss_options, TreeLossConfig):
+                    # Tree routing regularization requires moderators and model
+                    moderators = batch_data["moderators"]
+                    batch_main_loss_tensor = loss_fn_callable(
+                        predictions, targets, moderators, model
                     )
                 elif isinstance(loss_options, MSELossConfig):
                     batch_main_loss_tensor = loss_fn_callable(predictions, targets)

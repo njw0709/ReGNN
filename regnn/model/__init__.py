@@ -1,6 +1,7 @@
 from .base import ReGNNConfig, IndexPredictionConfig, MLPConfig, TreeConfig
 from .custom_loss import (
     vae_kld_regularized_loss,
+    tree_routing_regularized_loss,
     lasso_loss,
     elasticnet_loss,
     ridge_loss,
@@ -23,6 +24,7 @@ __all__ = [
     "MLPConfig",
     "TreeConfig",
     "vae_kld_regularized_loss",
+    "tree_routing_regularized_loss",
     "lasso_loss",
     "elasticnet_loss",
     "ridge_loss",

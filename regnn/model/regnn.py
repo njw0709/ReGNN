@@ -268,6 +268,45 @@ class SoftTree(nn.Module):
 
         return leaf_probs
 
+    def compute_routing_regularization(self, x):
+        """Compute Frosst & Hinton regularization for balanced routing.
+
+        Encourages each internal node to split data 50/50 on average across the batch.
+
+        Args:
+            x: Input tensor of shape (batch_size, input_dim) or (batch_size, 1, input_dim)
+
+        Returns:
+            Regularization loss (scalar tensor)
+        """
+        # Handle 3D input
+        if x.dim() == 3:
+            x = x.squeeze(1)
+
+        # Compute routing probabilities for all internal nodes
+        # Shape: (batch_size, num_internal_nodes)
+        routing_logits = (
+            torch.matmul(x, self.internal_node_weights.t()) + self.internal_node_bias
+        )
+        routing_probs = torch.sigmoid(self.sharpness * routing_logits)
+
+        # Compute mean routing probability for each node across the batch
+        # Shape: (num_internal_nodes,)
+        mean_routing_probs = routing_probs.mean(dim=0)
+
+        # Add small epsilon for numerical stability
+        eps = 1e-8
+        mean_routing_probs = torch.clamp(mean_routing_probs, eps, 1 - eps)
+
+        # Cross-entropy between (p̄, 1-p̄) and (0.5, 0.5)
+        # L = -[0.5 * log(p̄) + 0.5 * log(1-p̄)]
+        reg_loss = -0.5 * (
+            torch.log(mean_routing_probs) + torch.log(1 - mean_routing_probs)
+        )
+
+        # Sum over all internal nodes
+        return reg_loss.sum()
+
 
 class MLPEnsemble(nn.Module):
     """Ensemble of MLP or ResMLP models that averages their outputs."""
@@ -353,6 +392,14 @@ class SoftTreeEnsemble(nn.Module):
         outputs = [model(x) for model in self.models]
         avg_output = torch.mean(torch.stack(outputs), dim=0)
         return avg_output
+
+    def compute_routing_regularization(self, x):
+        """Compute routing regularization for all trees in the ensemble."""
+        total_reg = torch.tensor(0.0, device=x.device)
+        for model in self.models:
+            total_reg = total_reg + model.compute_routing_regularization(x)
+        # Average across ensemble
+        return total_reg / len(self.models)
 
 
 class VAE(nn.Module):

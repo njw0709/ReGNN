@@ -4,6 +4,7 @@ from regnn.model import ReGNNConfig
 from regnn.train import (
     TrainingHyperParams,
     KLDLossConfig,
+    TreeLossConfig,
 )
 from regnn.data import DataFrameReadInConfig
 from regnn.probe import (
@@ -52,6 +53,19 @@ class MacroConfig(BaseModel):
             if not model_cfg.nn_config.output_mu_var:
                 raise ValueError(
                     "KLDLossConfig specified, but model.nn_config.output_mu_var is False."
+                )
+        return data
+
+    @model_validator(mode="after")
+    def check_tree_loss_compatibility(cls, data: Any) -> Any:
+        """Validates TreeLossConfig is only used with SoftTree models."""
+        loss_opts = data.training.loss_options
+        model_cfg = data.model
+        if isinstance(loss_opts, TreeLossConfig):
+            if not model_cfg.nn_config.use_soft_tree:
+                raise ValueError(
+                    "TreeLossConfig specified, but model.nn_config.use_soft_tree is False. "
+                    "Tree routing regularization requires use_soft_tree=True."
                 )
         return data
 

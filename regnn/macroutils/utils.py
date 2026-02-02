@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 from regnn.model import (
     vae_kld_regularized_loss,
+    tree_routing_regularized_loss,
     elasticnet_loss,
     lasso_loss,
 )
@@ -13,6 +14,7 @@ from regnn.train import (
     TrainingHyperParams,
     MSELossConfig,
     KLDLossConfig,
+    TreeLossConfig,
     ElasticNetRegConfig,
 )
 
@@ -65,15 +67,21 @@ def setup_loss_and_optimizer(
             lambda_reg=loss_opts.lamba_reg,
             reduction=loss_opts.reduction,
         )
+    elif isinstance(loss_opts, TreeLossConfig):
+        # Tree routing regularization loss
+        loss_func = tree_routing_regularized_loss(
+            lambda_tree=loss_opts.lambda_tree,
+            reduction=loss_opts.reduction,
+        )
     elif isinstance(loss_opts, MSELossConfig):
         loss_func = nn.MSELoss(reduction=loss_opts.reduction)
     else:
         # This case should ideally be prevented by Pydantic if using discriminated unions for LossConfigs subtypes.
-        # If LossConfigs is a Union of MSELossConfig | KLDLossConfig, this path might not be reachable
+        # If LossConfigs is a Union of MSELossConfig | KLDLossConfig | TreeLossConfig, this path might not be reachable
         # if the input `loss_options` is always one of the specific types.
         raise ValueError(
             f"Unsupported loss configuration type: {type(loss_opts)}. "
-            f"Expected MSELossConfig or KLDLossConfig. Ensure training_hyperparams.loss_options is correctly initialized."
+            f"Expected MSELossConfig, KLDLossConfig, or TreeLossConfig. Ensure training_hyperparams.loss_options is correctly initialized."
         )
 
     # 2. Setup Regularization

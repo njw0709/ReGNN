@@ -62,6 +62,150 @@ class LearningRateConfig(BaseModel):
     )
 
 
+class StepLRConfig(BaseModel):
+    """Configuration for StepLR scheduler"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+    type: Literal["step"] = "step"
+    step_size: int = Field(
+        30, gt=0, description="Period of learning rate decay (in epochs)"
+    )
+    gamma: float = Field(
+        0.1, gt=0.0, le=1.0, description="Multiplicative factor of learning rate decay"
+    )
+
+
+class ExponentialLRConfig(BaseModel):
+    """Configuration for ExponentialLR scheduler"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+    type: Literal["exponential"] = "exponential"
+    gamma: float = Field(
+        0.95, gt=0.0, le=1.0, description="Multiplicative factor of learning rate decay"
+    )
+
+
+class CosineAnnealingLRConfig(BaseModel):
+    """Configuration for CosineAnnealingLR scheduler"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+    type: Literal["cosine"] = "cosine"
+    T_max: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Maximum number of iterations (defaults to total epochs if None)",
+    )
+    eta_min: float = Field(
+        0.0, ge=0.0, description="Minimum learning rate"
+    )
+
+
+class ReduceLROnPlateauConfig(BaseModel):
+    """Configuration for ReduceLROnPlateau scheduler"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+    type: Literal["plateau"] = "plateau"
+    mode: Literal["min", "max"] = Field(
+        "min", description="Whether to minimize or maximize the monitored metric"
+    )
+    factor: float = Field(
+        0.1, gt=0.0, lt=1.0, description="Factor by which the learning rate will be reduced"
+    )
+    patience: int = Field(
+        10, ge=0, description="Number of epochs with no improvement before reducing LR"
+    )
+    threshold: float = Field(
+        1e-4, gt=0.0, description="Threshold for measuring the new optimum"
+    )
+    threshold_mode: Literal["rel", "abs"] = Field(
+        "rel", description="One of rel, abs for relative or absolute threshold"
+    )
+    cooldown: int = Field(
+        0, ge=0, description="Number of epochs to wait before resuming normal operation"
+    )
+    min_lr: float = Field(
+        0.0, ge=0.0, description="Lower bound on the learning rate"
+    )
+
+
+class WarmupCosineConfig(BaseModel):
+    """Configuration for Linear Warmup followed by Cosine Annealing"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+    type: Literal["warmup_cosine"] = "warmup_cosine"
+    warmup_epochs: int = Field(
+        5, gt=0, description="Number of epochs for linear warmup"
+    )
+    T_max: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Maximum number of iterations for cosine (defaults to total epochs - warmup if None)",
+    )
+    eta_min: float = Field(
+        0.0, ge=0.0, description="Minimum learning rate after warmup"
+    )
+
+
+SchedulerConfigUnion = Union[
+    StepLRConfig,
+    ExponentialLRConfig,
+    CosineAnnealingLRConfig,
+    ReduceLROnPlateauConfig,
+    WarmupCosineConfig,
+]
+
+
+class TemperatureAnnealingConfig(BaseModel):
+    """Configuration for temperature/sharpness annealing in SoftTree models"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+
+    schedule_type: Literal["linear", "exponential", "cosine", "step"] = Field(
+        "linear", description="Type of temperature annealing schedule"
+    )
+    initial_temp: float = Field(
+        1.0, gt=0.0, description="Starting temperature/sharpness value"
+    )
+    final_temp: float = Field(
+        10.0, gt=0.0, description="Ending temperature/sharpness value"
+    )
+    # Schedule-specific parameters
+    step_size: Optional[int] = Field(
+        None,
+        gt=0,
+        description="For 'step' schedule: period between temperature increases (in epochs)",
+    )
+    step_gamma: Optional[float] = Field(
+        None,
+        gt=0.0,
+        description="For 'step' schedule: multiplicative factor for temperature increase",
+    )
+    exp_gamma: Optional[float] = Field(
+        None,
+        gt=0.0,
+        description="For 'exponential' schedule: base for exponential growth",
+    )
+
+    @model_validator(mode="after")
+    def validate_schedule_params(self):
+        """Validate that schedule-specific parameters are provided"""
+        if self.schedule_type == "step":
+            if self.step_size is None:
+                raise ValueError(
+                    "step_size must be provided when schedule_type is 'step'"
+                )
+            if self.step_gamma is None:
+                raise ValueError(
+                    "step_gamma must be provided when schedule_type is 'step'"
+                )
+        elif self.schedule_type == "exponential":
+            if self.exp_gamma is None:
+                raise ValueError(
+                    "exp_gamma must be provided when schedule_type is 'exponential'"
+                )
+        return self
+
+
 class OptimizerConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=False)
 
@@ -70,6 +214,12 @@ class OptimizerConfig(BaseModel):
     )
     lr: LearningRateConfig = Field(
         default_factory=LearningRateConfig, description="learning rate configurations"
+    )
+    scheduler: Optional[SchedulerConfigUnion] = Field(
+        None, description="Learning rate scheduler configuration"
+    )
+    temperature_annealing: Optional[TemperatureAnnealingConfig] = Field(
+        None, description="Temperature annealing configuration for SoftTree models"
     )
 
 
@@ -80,6 +230,16 @@ class MSELossConfig(LossConfigs):
 class KLDLossConfig(LossConfigs):
     name: str = "KLDLoss"
     lamba_reg: float = Field(0.01, ge=0, description="kld lambda (mse + lambda*kld)")
+
+
+class TreeLossConfig(LossConfigs):
+    """MSE Loss with SoftTree routing regularization (Frosst & Hinton)"""
+    name: str = "TreeLoss"
+    lambda_tree: float = Field(
+        0.01,
+        ge=0,
+        description="Lambda weight for tree routing regularization (encourages 50/50 splits)"
+    )
 
 
 class TrainingHyperParams(BaseModel):
