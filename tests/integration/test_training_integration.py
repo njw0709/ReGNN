@@ -268,3 +268,320 @@ def test_multiple_epochs_no_error(regnn_dataset):
 
         # Should complete without errors
         assert epoch_loss > 0
+
+
+# ============================================================================
+# Scheduler and Temperature Annealing Integration Tests
+# ============================================================================
+
+
+def test_training_with_step_lr_scheduler(regnn_dataset):
+    """Test training with StepLR scheduler."""
+    from regnn.train import StepLRConfig, MSELossConfig
+    from regnn.macroutils.utils import setup_loss_and_optimizer
+    from regnn.train import TrainingHyperParams, OptimizerConfig
+
+    model_config = ReGNNConfig.create(
+        num_moderators=2,
+        num_controlled=1,
+        layer_input_sizes=[8],
+        vae=False,
+        batch_norm=False,
+        device="cpu",
+    )
+    model = ReGNN.from_config(model_config)
+
+    # Setup training config with scheduler
+    scheduler_config = StepLRConfig(step_size=2, gamma=0.5)
+    optimizer_config = OptimizerConfig(scheduler=scheduler_config)
+    training_hp = TrainingHyperParams(
+        epochs=5,
+        batch_size=16,
+        optimizer_config=optimizer_config,
+        loss_options=MSELossConfig(),
+    )
+
+    loss_fn, _, optimizer, scheduler = setup_loss_and_optimizer(model, training_hp)
+
+    assert scheduler is not None
+    initial_lr = optimizer.param_groups[0]["lr"]
+
+    dataloader = DataLoader(regnn_dataset, batch_size=16, shuffle=True)
+
+    for epoch in range(5):
+        for batch_data in dataloader:
+            optimizer.zero_grad()
+            model_inputs = {
+                k: batch_data[k]
+                for k in ["moderators", "focal_predictor", "controlled_predictors"]
+            }
+            predictions = model(**model_inputs)
+            loss = loss_fn(predictions, batch_data["outcome"])
+            loss.backward()
+            optimizer.step()
+
+        scheduler.step()
+
+        # Check LR changes according to schedule
+        current_lr = optimizer.param_groups[0]["lr"]
+        if epoch == 0:
+            assert current_lr == initial_lr
+        elif epoch == 2:
+            # After 2 steps (at epoch 2), LR should be reduced
+            assert current_lr < initial_lr
+
+
+def test_training_with_cosine_lr_scheduler(regnn_dataset):
+    """Test training with CosineAnnealingLR scheduler."""
+    from regnn.train import CosineAnnealingLRConfig, MSELossConfig
+    from regnn.macroutils.utils import setup_loss_and_optimizer
+    from regnn.train import TrainingHyperParams, OptimizerConfig
+
+    model_config = ReGNNConfig.create(
+        num_moderators=2,
+        num_controlled=1,
+        layer_input_sizes=[8],
+        vae=False,
+        batch_norm=False,
+        device="cpu",
+    )
+    model = ReGNN.from_config(model_config)
+
+    scheduler_config = CosineAnnealingLRConfig(T_max=5, eta_min=0.0)
+    optimizer_config = OptimizerConfig(scheduler=scheduler_config)
+    training_hp = TrainingHyperParams(
+        epochs=5,
+        batch_size=16,
+        optimizer_config=optimizer_config,
+        loss_options=MSELossConfig(),
+    )
+
+    loss_fn, _, optimizer, scheduler = setup_loss_and_optimizer(model, training_hp)
+
+    assert scheduler is not None
+    initial_lr = optimizer.param_groups[0]["lr"]
+
+    dataloader = DataLoader(regnn_dataset, batch_size=16, shuffle=False)
+
+    lrs = []
+    for epoch in range(5):
+        for batch_data in dataloader:
+            optimizer.zero_grad()
+            model_inputs = {
+                k: batch_data[k]
+                for k in ["moderators", "focal_predictor", "controlled_predictors"]
+            }
+            predictions = model(**model_inputs)
+            loss = loss_fn(predictions, batch_data["outcome"])
+            loss.backward()
+            optimizer.step()
+
+        scheduler.step()
+        lrs.append(optimizer.param_groups[0]["lr"])
+
+    # LR should decrease then increase (cosine)
+    assert lrs[0] > lrs[2]  # Middle should be lower
+
+
+def test_training_with_temperature_annealing(regnn_dataset):
+    """Test training with temperature annealing for SoftTree."""
+    from regnn.train import TemperatureAnnealingConfig, MSELossConfig
+    from regnn.macroutils.utils import setup_loss_and_optimizer, TemperatureAnnealer
+    from regnn.train import TrainingHyperParams, OptimizerConfig
+
+    model_config = ReGNNConfig.create(
+        num_moderators=2,
+        num_controlled=1,
+        layer_input_sizes=[8],
+        use_soft_tree=True,
+        tree_depth=3,
+        tree_sharpness=1.0,
+        vae=False,
+        batch_norm=False,
+        device="cpu",
+    )
+    model = ReGNN.from_config(model_config)
+
+    temp_config = TemperatureAnnealingConfig(
+        schedule_type="linear", initial_temp=1.0, final_temp=5.0
+    )
+    optimizer_config = OptimizerConfig(temperature_annealing=temp_config)
+    training_hp = TrainingHyperParams(
+        epochs=5,
+        batch_size=16,
+        optimizer_config=optimizer_config,
+        loss_options=MSELossConfig(),
+    )
+
+    loss_fn, _, optimizer, scheduler = setup_loss_and_optimizer(model, training_hp)
+
+    # Create temperature annealer
+    annealer = TemperatureAnnealer(temp_config, training_hp.epochs)
+
+    dataloader = DataLoader(regnn_dataset, batch_size=16, shuffle=False)
+
+    temperatures = []
+    for epoch in range(5):
+        # Update temperature at start of epoch
+        new_temp = annealer.update_model_temperature(model, epoch)
+        temperatures.append(new_temp)
+
+        for batch_data in dataloader:
+            optimizer.zero_grad()
+            model_inputs = {
+                k: batch_data[k]
+                for k in ["moderators", "focal_predictor", "controlled_predictors"]
+            }
+            predictions = model(**model_inputs)
+            loss = loss_fn(predictions, batch_data["outcome"])
+            loss.backward()
+            optimizer.step()
+
+    # Temperature should increase linearly
+    assert temperatures[0] == 1.0
+    assert temperatures[-1] == 5.0
+    assert all(
+        temperatures[i] < temperatures[i + 1] for i in range(len(temperatures) - 1)
+    )
+    # Verify model sharpness was updated
+    assert model.index_prediction_model.mlp.sharpness == 5.0
+
+
+def test_training_with_scheduler_and_temperature_annealing(regnn_dataset):
+    """Test training with both LR scheduler and temperature annealing."""
+    from regnn.train import StepLRConfig, TemperatureAnnealingConfig, MSELossConfig
+    from regnn.macroutils.utils import setup_loss_and_optimizer, TemperatureAnnealer
+    from regnn.train import TrainingHyperParams, OptimizerConfig
+
+    model_config = ReGNNConfig.create(
+        num_moderators=2,
+        num_controlled=1,
+        layer_input_sizes=[8],
+        use_soft_tree=True,
+        tree_depth=3,
+        tree_sharpness=1.0,
+        vae=False,
+        batch_norm=False,
+        device="cpu",
+    )
+    model = ReGNN.from_config(model_config)
+
+    scheduler_config = StepLRConfig(step_size=2, gamma=0.5)
+    temp_config = TemperatureAnnealingConfig(
+        schedule_type="linear", initial_temp=1.0, final_temp=5.0
+    )
+    optimizer_config = OptimizerConfig(
+        scheduler=scheduler_config, temperature_annealing=temp_config
+    )
+    training_hp = TrainingHyperParams(
+        epochs=5,
+        batch_size=16,
+        optimizer_config=optimizer_config,
+        loss_options=MSELossConfig(),
+    )
+
+    loss_fn, _, optimizer, scheduler = setup_loss_and_optimizer(model, training_hp)
+
+    assert scheduler is not None
+    annealer = TemperatureAnnealer(temp_config, training_hp.epochs)
+
+    dataloader = DataLoader(regnn_dataset, batch_size=16, shuffle=False)
+
+    initial_lr = optimizer.param_groups[0]["lr"]
+    lrs = []
+    temps = []
+
+    for epoch in range(5):
+        # Update temperature
+        new_temp = annealer.update_model_temperature(model, epoch)
+        temps.append(new_temp)
+
+        for batch_data in dataloader:
+            optimizer.zero_grad()
+            model_inputs = {
+                k: batch_data[k]
+                for k in ["moderators", "focal_predictor", "controlled_predictors"]
+            }
+            predictions = model(**model_inputs)
+            loss = loss_fn(predictions, batch_data["outcome"])
+            loss.backward()
+            optimizer.step()
+
+        scheduler.step()
+        lrs.append(optimizer.param_groups[0]["lr"])
+
+    # Both should have changed
+    assert temps[0] < temps[-1]  # Temperature increased
+    assert lrs[0] == initial_lr
+    assert lrs[2] < initial_lr  # LR reduced after step
+
+
+def test_config_validation_temperature_without_softtree():
+    """Test that temperature annealing without SoftTree raises validation error."""
+    from regnn.macroutils.base import MacroConfig
+    from regnn.data import DataFrameReadInConfig, ModeratedRegressionConfig
+    from regnn.train import (
+        TemperatureAnnealingConfig,
+        TrainingHyperParams,
+        OptimizerConfig,
+    )
+
+    # Create config with temperature annealing but without SoftTree
+    with pytest.raises(ValueError, match="Temperature annealing.*use_soft_tree"):
+        MacroConfig(
+            read_config=DataFrameReadInConfig(read_cols=["a", "b", "c", "d", "e"]),
+            regression=ModeratedRegressionConfig(
+                focal_predictor="a",
+                controlled_cols=["b"],
+                moderators=["c", "d"],
+                outcome_col="e",
+            ),
+            model=ReGNNConfig.create(
+                num_moderators=2,
+                num_controlled=1,
+                layer_input_sizes=[8],
+                use_soft_tree=False,  # Not using SoftTree
+                vae=False,
+            ),
+            training=TrainingHyperParams(
+                optimizer_config=OptimizerConfig(
+                    temperature_annealing=TemperatureAnnealingConfig(
+                        schedule_type="linear", initial_temp=1.0, final_temp=5.0
+                    )
+                )
+            ),
+        )
+
+
+def test_config_validation_warmup_epochs():
+    """Test that warmup_epochs >= total_epochs raises validation error."""
+    from regnn.macroutils.base import MacroConfig
+    from regnn.data import DataFrameReadInConfig, ModeratedRegressionConfig
+    from regnn.train import WarmupCosineConfig, TrainingHyperParams, OptimizerConfig
+
+    with pytest.raises(ValueError, match="Warmup epochs.*must be less than"):
+        MacroConfig(
+            read_config=DataFrameReadInConfig(read_cols=["a", "b", "c", "d", "e"]),
+            regression=ModeratedRegressionConfig(
+                focal_predictor="a",
+                controlled_cols=["b"],
+                moderators=["c", "d"],
+                outcome_col="e",
+            ),
+            model=ReGNNConfig.create(
+                num_moderators=2,
+                num_controlled=1,
+                layer_input_sizes=[8],
+                vae=False,
+            ),
+            training=TrainingHyperParams(
+                epochs=5,
+                optimizer_config=OptimizerConfig(
+                    scheduler=WarmupCosineConfig(
+                        warmup_epochs=10,  # More than total epochs
+                        T_max=None,
+                        eta_min=0.0,
+                    )
+                ),
+            ),
+        )

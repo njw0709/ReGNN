@@ -9,6 +9,7 @@ from .l2_probes import l2_length_probe
 from .objective_probes import objective_probe
 from .regression_eval_probes import regression_eval_probe, generate_stata_command
 from .stopping_probes import pval_early_stopping_probe
+from .scheduler_probes import scheduler_monitor_probe
 
 # from . import custom_probes # Example for other probe categories
 
@@ -20,4 +21,5 @@ __all__ = [
     "regression_eval_probe",
     "pval_early_stopping_probe",
     "generate_stata_command",
+    "scheduler_monitor_probe",
 ]

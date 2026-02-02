@@ -307,6 +307,14 @@ class SoftTree(nn.Module):
         # Sum over all internal nodes
         return reg_loss.sum()
 
+    def set_temperature(self, temperature: float):
+        """Update sharpness parameter for temperature annealing.
+
+        Args:
+            temperature: New temperature/sharpness value
+        """
+        self.sharpness = temperature
+
 
 class MLPEnsemble(nn.Module):
     """Ensemble of MLP or ResMLP models that averages their outputs."""
@@ -400,6 +408,15 @@ class SoftTreeEnsemble(nn.Module):
             total_reg = total_reg + model.compute_routing_regularization(x)
         # Average across ensemble
         return total_reg / len(self.models)
+
+    def set_temperature(self, temperature: float):
+        """Update sharpness for all trees in ensemble.
+
+        Args:
+            temperature: New temperature/sharpness value
+        """
+        for model in self.models:
+            model.set_temperature(temperature)
 
 
 class VAE(nn.Module):
@@ -736,6 +753,25 @@ class IndexPredictionModel(nn.Module):
         else:
             return predicted_index
 
+    def set_temperature(self, temperature: float):
+        """Update temperature for SoftTree models.
+
+        Args:
+            temperature: New temperature/sharpness value
+
+        Note:
+            Only applies to SoftTree-based models. No-op for MLP/ResMLP models.
+        """
+        if self.use_soft_tree:
+            if self.num_models == 1:
+                if hasattr(self.mlp, 'set_temperature'):
+                    self.mlp.set_temperature(temperature)
+            else:
+                # Multiple models
+                for model in self.mlp:
+                    if hasattr(model, 'set_temperature'):
+                        model.set_temperature(temperature)
+
 
 class ReGNN(nn.Module):
     @classmethod
@@ -1032,3 +1068,15 @@ class ReGNN(nn.Module):
                     return outcome
         else:
             return outcome
+
+    def set_temperature(self, temperature: float):
+        """Update temperature for SoftTree models in index prediction.
+
+        Args:
+            temperature: New temperature/sharpness value
+
+        Note:
+            Only applies if the index_prediction_model uses SoftTree. No-op otherwise.
+        """
+        if hasattr(self.index_prediction_model, 'set_temperature'):
+            self.index_prediction_model.set_temperature(temperature)

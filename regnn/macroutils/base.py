@@ -234,3 +234,46 @@ class MacroConfig(BaseModel):
                         f"Uses '{schedule.index_column_name}', main is '{main_regression_index}'. Must match."
                     )
         return self
+
+    @model_validator(mode="after")
+    def validate_temperature_annealing_compatibility(self) -> "MacroConfig":
+        """
+        Validates that temperature annealing is only used with SoftTree models.
+        """
+        temp_annealing = self.training.optimizer_config.temperature_annealing
+        if temp_annealing is not None:
+            if not self.model.nn_config.use_soft_tree:
+                raise ValueError(
+                    "Temperature annealing is configured, but model.nn_config.use_soft_tree is False. "
+                    "Temperature annealing only applies to SoftTree models."
+                )
+        return self
+
+    @model_validator(mode="after")
+    def validate_scheduler_configuration(self) -> "MacroConfig":
+        """
+        Validates learning rate scheduler configuration.
+        """
+        from regnn.train import ReduceLROnPlateauConfig, WarmupCosineConfig
+
+        scheduler_config = self.training.optimizer_config.scheduler
+        if scheduler_config is not None:
+            # Check ReduceLROnPlateau with no test set
+            if isinstance(scheduler_config, ReduceLROnPlateauConfig):
+                # If using ReduceLROnPlateau, warn if no validation/test set is available
+                if self.training.val_ratio == 0.0 and self.training.kfold is None:
+                    warnings.warn(
+                        "ReduceLROnPlateau scheduler is configured, but no validation or test set "
+                        "is available (val_ratio=0.0 and kfold=None). The scheduler will use training "
+                        "loss, which may not be ideal for detecting plateaus.",
+                        UserWarning,
+                    )
+
+            # Check WarmupCosine warmup_epochs < total_epochs
+            if isinstance(scheduler_config, WarmupCosineConfig):
+                if scheduler_config.warmup_epochs >= self.training.epochs:
+                    raise ValueError(
+                        f"Warmup epochs ({scheduler_config.warmup_epochs}) must be less than "
+                        f"total training epochs ({self.training.epochs})"
+                    )
+        return self

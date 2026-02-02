@@ -8,6 +8,13 @@ from .base import (
     TrainingHyperParams,
     OptimizerConfig,
     LearningRateConfig,
+    StepLRConfig,
+    ExponentialLRConfig,
+    CosineAnnealingLRConfig,
+    ReduceLROnPlateauConfig,
+    WarmupCosineConfig,
+    SchedulerConfigUnion,
+    TemperatureAnnealingConfig,
 )
 
 __all__ = [
@@ -21,4 +28,11 @@ __all__ = [
     "ElasticNetRegConfig",
     "OptimizerConfig",
     "LearningRateConfig",
+    "StepLRConfig",
+    "ExponentialLRConfig",
+    "CosineAnnealingLRConfig",
+    "ReduceLROnPlateauConfig",
+    "WarmupCosineConfig",
+    "SchedulerConfigUnion",
+    "TemperatureAnnealingConfig",
 ]

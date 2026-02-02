@@ -16,6 +16,13 @@ from regnn.train import (
     KLDLossConfig,
     TreeLossConfig,
     ElasticNetRegConfig,
+    StepLRConfig,
+    ExponentialLRConfig,
+    CosineAnnealingLRConfig,
+    ReduceLROnPlateauConfig,
+    WarmupCosineConfig,
+    SchedulerConfigUnion,
+    TemperatureAnnealingConfig,
 )
 
 
@@ -48,11 +55,213 @@ def load_model(
     return model
 
 
+def create_lr_scheduler(
+    optimizer: optim.Optimizer,
+    scheduler_config: Optional[SchedulerConfigUnion],
+    total_epochs: int,
+) -> Optional[Union[
+    optim.lr_scheduler.StepLR,
+    optim.lr_scheduler.ExponentialLR,
+    optim.lr_scheduler.CosineAnnealingLR,
+    optim.lr_scheduler.ReduceLROnPlateau,
+    optim.lr_scheduler.SequentialLR,
+]]:
+    """Create learning rate scheduler from configuration.
+
+    Args:
+        optimizer: Optimizer to schedule
+        scheduler_config: Scheduler configuration
+        total_epochs: Total number of training epochs
+
+    Returns:
+        Scheduler instance or None if no scheduler configured
+    """
+    if scheduler_config is None:
+        return None
+
+    if isinstance(scheduler_config, StepLRConfig):
+        return optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=scheduler_config.step_size,
+            gamma=scheduler_config.gamma,
+        )
+    elif isinstance(scheduler_config, ExponentialLRConfig):
+        return optim.lr_scheduler.ExponentialLR(
+            optimizer,
+            gamma=scheduler_config.gamma,
+        )
+    elif isinstance(scheduler_config, CosineAnnealingLRConfig):
+        T_max = scheduler_config.T_max if scheduler_config.T_max is not None else total_epochs
+        return optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=T_max,
+            eta_min=scheduler_config.eta_min,
+        )
+    elif isinstance(scheduler_config, ReduceLROnPlateauConfig):
+        return optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode=scheduler_config.mode,
+            factor=scheduler_config.factor,
+            patience=scheduler_config.patience,
+            threshold=scheduler_config.threshold,
+            threshold_mode=scheduler_config.threshold_mode,
+            cooldown=scheduler_config.cooldown,
+            min_lr=scheduler_config.min_lr,
+        )
+    elif isinstance(scheduler_config, WarmupCosineConfig):
+        # Implement linear warmup followed by cosine annealing using SequentialLR
+        warmup_epochs = scheduler_config.warmup_epochs
+        T_max = (
+            scheduler_config.T_max
+            if scheduler_config.T_max is not None
+            else total_epochs - warmup_epochs
+        )
+
+        # Linear warmup scheduler
+        warmup_scheduler = optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=1e-6,  # Start from very small LR
+            end_factor=1.0,     # Reach full LR
+            total_iters=warmup_epochs,
+        )
+
+        # Cosine annealing scheduler
+        cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=T_max,
+            eta_min=scheduler_config.eta_min,
+        )
+
+        # Sequential scheduler: warmup then cosine
+        return optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, cosine_scheduler],
+            milestones=[warmup_epochs],
+        )
+    else:
+        raise ValueError(f"Unknown scheduler type: {type(scheduler_config)}")
+
+
+class TemperatureAnnealer:
+    """Manages temperature/sharpness annealing for SoftTree models.
+
+    Temperature annealing gradually increases the sharpness parameter in SoftTree models
+    during training, making the routing decisions progressively sharper and more deterministic.
+    """
+
+    def __init__(self, config: TemperatureAnnealingConfig, total_epochs: int):
+        """Initialize temperature annealer.
+
+        Args:
+            config: Temperature annealing configuration
+            total_epochs: Total number of training epochs
+        """
+        self.config = config
+        self.total_epochs = total_epochs
+        self.initial_temp = config.initial_temp
+        self.final_temp = config.final_temp
+
+    def get_temperature(self, epoch: int) -> float:
+        """Compute temperature for current epoch.
+
+        Args:
+            epoch: Current epoch (0-indexed)
+
+        Returns:
+            Temperature value for this epoch
+        """
+        if self.config.schedule_type == "linear":
+            return self._linear_schedule(epoch)
+        elif self.config.schedule_type == "exponential":
+            return self._exponential_schedule(epoch)
+        elif self.config.schedule_type == "cosine":
+            return self._cosine_schedule(epoch)
+        elif self.config.schedule_type == "step":
+            return self._step_schedule(epoch)
+        else:
+            raise ValueError(f"Unknown schedule type: {self.config.schedule_type}")
+
+    def _linear_schedule(self, epoch: int) -> float:
+        """Linear temperature increase from initial_temp to final_temp."""
+        progress = min(epoch / max(self.total_epochs - 1, 1), 1.0)
+        return self.initial_temp + progress * (self.final_temp - self.initial_temp)
+
+    def _exponential_schedule(self, epoch: int) -> float:
+        """Exponential temperature increase from initial_temp to final_temp."""
+        if self.config.exp_gamma is None:
+            raise ValueError("exp_gamma must be set for exponential schedule")
+
+        # Compute the growth factor such that we reach final_temp at the last epoch
+        # final_temp = initial_temp * (gamma ^ total_epochs)
+        # This allows user-specified gamma, or we compute it
+        gamma = self.config.exp_gamma
+        progress = epoch / max(self.total_epochs - 1, 1)
+        # Use logarithmic interpolation
+        log_initial = np.log(self.initial_temp)
+        log_final = np.log(self.final_temp)
+        return float(np.exp(log_initial + progress * (log_final - log_initial)))
+
+    def _cosine_schedule(self, epoch: int) -> float:
+        """Cosine annealing temperature increase from initial_temp to final_temp."""
+        progress = min(epoch / max(self.total_epochs - 1, 1), 1.0)
+        # Cosine curve from 0 to 1
+        cosine_progress = (1 - np.cos(progress * np.pi)) / 2
+        return self.initial_temp + cosine_progress * (self.final_temp - self.initial_temp)
+
+    def _step_schedule(self, epoch: int) -> float:
+        """Step-based temperature increase."""
+        if self.config.step_size is None or self.config.step_gamma is None:
+            raise ValueError("step_size and step_gamma must be set for step schedule")
+
+        num_steps = epoch // self.config.step_size
+        return min(
+            self.initial_temp * (self.config.step_gamma ** num_steps),
+            self.final_temp
+        )
+
+    def update_model_temperature(self, model: ReGNN, epoch: int) -> float:
+        """Update temperature/sharpness in model's SoftTree components.
+
+        Args:
+            model: ReGNN model to update
+            epoch: Current epoch (0-indexed)
+
+        Returns:
+            The new temperature value applied
+        """
+        new_temp = self.get_temperature(epoch)
+
+        # Navigate to index_prediction_model and update temperature
+        if hasattr(model, 'index_prediction_model'):
+            index_model = model.index_prediction_model
+            if hasattr(index_model, 'use_soft_tree') and index_model.use_soft_tree:
+                # Update temperature through the hierarchy
+                if hasattr(index_model, 'set_temperature'):
+                    index_model.set_temperature(new_temp)
+
+        return new_temp
+
+
 def setup_loss_and_optimizer(
     model: ReGNN,
     training_hyperparams: TrainingHyperParams,  # Use the specific type
-) -> Tuple[nn.Module, Optional[nn.Module], optim.Optimizer]:
-    """Setup loss function, regularization, and optimizer based on TrainingHyperParams and ReGNNConfig."""
+) -> Tuple[
+    nn.Module,
+    Optional[nn.Module],
+    optim.Optimizer,
+    Optional[Union[
+        optim.lr_scheduler.StepLR,
+        optim.lr_scheduler.ExponentialLR,
+        optim.lr_scheduler.CosineAnnealingLR,
+        optim.lr_scheduler.ReduceLROnPlateau,
+        optim.lr_scheduler.SequentialLR,
+    ]],
+]:
+    """Setup loss function, regularization, optimizer, and scheduler based on TrainingHyperParams.
+
+    Returns:
+        Tuple of (loss_function, regularization, optimizer, scheduler)
+    """
 
     loss_opts = training_hyperparams.loss_options
     optimizer_opts = training_hyperparams.optimizer_config
@@ -119,7 +328,15 @@ def setup_loss_and_optimizer(
         ],
         weight_decay=0.0,  # Top-level weight_decay is 0 as it's handled per param group
     )
-    return loss_func, regularization, optimizer
+
+    # 4. Setup Learning Rate Scheduler
+    scheduler = create_lr_scheduler(
+        optimizer,
+        optimizer_opts.scheduler,
+        training_hyperparams.epochs,
+    )
+
+    return loss_func, regularization, optimizer, scheduler
 
 
 def balance_gradients_for_regnn(

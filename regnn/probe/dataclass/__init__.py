@@ -1,6 +1,6 @@
 from .base import ProbeData, ProbeOptions
 from .trajectory import Snapshot, Trajectory
-from .nn import ObjectiveProbe
+from .nn import ObjectiveProbe, SchedulerProbe
 from .regression import (
     OLSModeratedResultsProbe,
     OLSResultsProbe,
@@ -34,6 +34,7 @@ __all__ = [
     "Snapshot",
     "Trajectory",
     "ObjectiveProbe",
+    "SchedulerProbe",
     "ModeratedRegressionConfig",
     "DebiasConfig",
     "OLSResultsProbe",

@@ -88,7 +88,7 @@ def train(
     else:
         model.to(torch.device(training_hp.device))
 
-    loss_func_train, regularization_train, optimizer = setup_loss_and_optimizer(
+    loss_func_train, regularization_train, optimizer, scheduler = setup_loss_and_optimizer(
         model, training_hp
     )
 
@@ -132,6 +132,18 @@ def train(
     )
     # --- END PRE-TRAINING PROBES ---
 
+    # Initialize temperature annealer if configured
+    temperature_annealer = None
+    if (
+        training_hp.optimizer_config.temperature_annealing is not None
+        and regnn_model_cfg.nn_config.use_soft_tree
+    ):
+        from regnn.macroutils.utils import TemperatureAnnealer
+        temperature_annealer = TemperatureAnnealer(
+            training_hp.optimizer_config.temperature_annealing,
+            training_hp.epochs
+        )
+
     # Training Loop - Refactored for new ProbeManager
     global_iteration_counter = 0
     training_should_continue = True
@@ -139,6 +151,10 @@ def train(
     for epoch in range(training_hp.epochs):
         if not training_should_continue:
             break
+
+        # Update temperature for SoftTree models
+        if temperature_annealer:
+            temperature_annealer.update_model_temperature(model, epoch)
 
         model.train()
         epoch_train_loss_sum = 0.0
@@ -300,6 +316,22 @@ def train(
         # Format and print epoch results including probe data
         epoch_printout = format_epoch_printout(base_printout, epoch, probe_manager)
         print(epoch_printout)
+
+        # Update learning rate scheduler
+        if scheduler:
+            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                # ReduceLROnPlateau needs a metric to monitor
+                # Try to use test loss if available, otherwise use train loss
+                metric_value = avg_epoch_train_loss
+                # Check if test objective was computed in epoch probes
+                for res in epoch_probes_results:
+                    from regnn.probe import ObjectiveProbe
+                    if isinstance(res, ObjectiveProbe) and res.data_source == "test":
+                        metric_value = res.objective
+                        break
+                scheduler.step(metric_value)
+            else:
+                scheduler.step()
 
     # --- POST-TRAINING PROBES ---
     # Run regardless of early stopping, but after the loop has finished or been broken
