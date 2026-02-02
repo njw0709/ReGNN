@@ -96,7 +96,7 @@ def objective_probe(
     num_batches = 0
 
     try:
-        loss_fn_callable, reg_fn_callable, _ = setup_loss_and_optimizer(
+        loss_fn_callable, reg_fn_callable, _, _ = setup_loss_and_optimizer(
             model, training_hp
         )
     except Exception as e:

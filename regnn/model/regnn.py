@@ -293,17 +293,14 @@ class SoftTree(nn.Module):
         # Compute mean routing probability for each node across the batch
         # Shape: (num_internal_nodes,)
         mean_routing_probs = routing_probs.mean(dim=0)
-
         # Add small epsilon for numerical stability
         eps = 1e-8
         mean_routing_probs = torch.clamp(mean_routing_probs, eps, 1 - eps)
-
         # Cross-entropy between (p̄, 1-p̄) and (0.5, 0.5)
         # L = -[0.5 * log(p̄) + 0.5 * log(1-p̄)]
         reg_loss = -0.5 * (
             torch.log(mean_routing_probs) + torch.log(1 - mean_routing_probs)
         )
-
         # Sum over all internal nodes
         return reg_loss.sum()
 
@@ -764,12 +761,12 @@ class IndexPredictionModel(nn.Module):
         """
         if self.use_soft_tree:
             if self.num_models == 1:
-                if hasattr(self.mlp, 'set_temperature'):
+                if hasattr(self.mlp, "set_temperature"):
                     self.mlp.set_temperature(temperature)
             else:
                 # Multiple models
                 for model in self.mlp:
-                    if hasattr(model, 'set_temperature'):
+                    if hasattr(model, "set_temperature"):
                         model.set_temperature(temperature)
 
 
@@ -1078,5 +1075,5 @@ class ReGNN(nn.Module):
         Note:
             Only applies if the index_prediction_model uses SoftTree. No-op otherwise.
         """
-        if hasattr(self.index_prediction_model, 'set_temperature'):
+        if hasattr(self.index_prediction_model, "set_temperature"):
             self.index_prediction_model.set_temperature(temperature)
