@@ -108,7 +108,8 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
         if isinstance(idx, slice):
             value = np.expand_dims(np.array(value), 1)
         else:
-            value = np.expand_dims(np.array(value), 0)
+            # For single items, keep as 1D array - DataLoader will batch along dim 0
+            value = np.array(value)
         return self._to_tensor(value) if as_tensor else self._to_numpy(value)
 
     def _get_moderators(self, idx: int, as_tensor: bool = True):

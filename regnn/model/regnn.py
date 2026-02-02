@@ -231,24 +231,34 @@ class SoftTree(nn.Module):
         # Initialize path probabilities for all nodes (internal + leaf)
         # Total nodes in complete binary tree = 2^(depth+1) - 1
         total_nodes = 2 ** (self.depth + 1) - 1
-        path_probs = torch.zeros(batch_size, total_nodes, device=self.device)
+        path_probs_list = []
 
         # Root node has probability 1
-        path_probs[:, 0] = 1.0
+        root_prob = torch.ones(batch_size, 1, device=self.device)
+        path_probs_list.append(root_prob)
 
         # Traverse tree level by level to compute path probabilities
         for node_idx in range(self.num_internal_nodes):
             left_child_idx = 2 * node_idx + 1
             right_child_idx = 2 * node_idx + 2
 
+            # Get parent probability
+            parent_prob = path_probs_list[node_idx]
+
             # Probability of going left
-            path_probs[:, left_child_idx] = (
-                path_probs[:, node_idx] * routing_probs[:, node_idx]
-            )
-            # Probability of going right
-            path_probs[:, right_child_idx] = path_probs[:, node_idx] * (
-                1 - routing_probs[:, node_idx]
-            )
+            left_prob = parent_prob * routing_probs[:, node_idx:node_idx+1]
+            
+            # Probability of going right  
+            right_prob = parent_prob * (1 - routing_probs[:, node_idx:node_idx+1])
+
+            # Append in order (left then right for binary tree structure)
+            if left_child_idx < total_nodes:
+                path_probs_list.append(left_prob)
+            if right_child_idx < total_nodes:
+                path_probs_list.append(right_prob)
+
+        # Concatenate all path probabilities
+        path_probs = torch.cat(path_probs_list, dim=1)
 
         # Extract leaf node probabilities (last num_leaf_nodes in the tree)
         leaf_start_idx = self.num_internal_nodes
@@ -694,7 +704,6 @@ class ReGNN(nn.Module):
             batch_norm=config.nn_config.batch_norm,
             vae=config.nn_config.vae,
             output_mu_var=config.nn_config.output_mu_var,
-            # interaction_direction=config.interaction_direction,
             n_ensemble=config.nn_config.n_ensemble,
             use_closed_form_linear_weights=config.use_closed_form_linear_weights,
             use_resmlp=config.nn_config.use_resmlp,
@@ -830,11 +839,35 @@ class ReGNN(nn.Module):
     ):
         if self.use_closed_form_linear_weights:
             assert y is not None
-        # shapes: moderators: (batch, 1, n); focal_predictor: (batch, 1, 1);
-        # threshold focal predictor if indicated.
 
+        # Normalize all inputs to 2D tensors (batch_size, features)
+        # Clone inputs first to avoid any in-place modification issues during backward pass
+        # focal_predictor: ensure (batch_size, 1)
         if focal_predictor.ndim == 1:
-            focal_predictor = torch.unsqueeze(focal_predictor, 1)
+            focal_predictor = focal_predictor.unsqueeze(1).clone()
+        elif focal_predictor.ndim == 3:
+            focal_predictor = focal_predictor.reshape(focal_predictor.shape[0], -1).clone()
+        else:
+            focal_predictor = focal_predictor.clone()
+
+        # controlled_predictors: ensure (batch_size, num_controlled)
+        if controlled_predictors.ndim == 3:
+            controlled_predictors = controlled_predictors.reshape(
+                controlled_predictors.shape[0], -1
+            ).clone()
+        else:
+            controlled_predictors = controlled_predictors.clone()
+
+        # moderators: ensure 2D (batch_size, num_moderators) or list of 2D
+        if not isinstance(moderators, list):
+            if moderators.ndim == 3:
+                moderators = moderators.reshape(moderators.shape[0], -1).clone()
+            else:
+                moderators = moderators.clone()
+        else:
+            moderators = [
+                m.reshape(m.shape[0], -1).clone() if m.ndim == 3 else m.clone() for m in moderators
+            ]
 
         if self.include_bias_focal_predictor:
             focal_predictor = torch.maximum(
@@ -845,7 +878,7 @@ class ReGNN(nn.Module):
         # get linear term variables
         all_linear_vars = self._get_linear_term_variables(
             moderators, focal_predictor, controlled_predictors
-        )  # Shape: (batch_size, 1, n_linear_terms)
+        )  # Shape: (batch_size, n_linear_terms)
 
         # compute index prediction
         if self.vae:
