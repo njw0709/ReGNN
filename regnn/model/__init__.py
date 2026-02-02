@@ -6,7 +6,7 @@ from .custom_loss import (
     ridge_loss,
 )
 from .modelutils import SklearnCompatibleModel
-from .regnn import MLP, MLPEnsemble, VAE, IndexPredictionModel, ReGNN
+from .regnn import MLP, ResMLP, MLPEnsemble, VAE, IndexPredictionModel, ReGNN
 
 __all__ = [
     "ReGNNConfig",
@@ -19,6 +19,7 @@ __all__ = [
     "ridge_loss",
     "SklearnCompatibleModel",
     "MLP",
+    "ResMLP",
     "MLPEnsemble",
     "VAE",
     "IndexPredictionModel",

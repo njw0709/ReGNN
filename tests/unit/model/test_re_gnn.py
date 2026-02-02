@@ -187,3 +187,88 @@ def test_re_gnn_creation_with_ensemble():
     controlled_vars = torch.randn(batch_size, 5)
     output = model(moderators, focal_predictor, controlled_vars)
     assert output.shape == (batch_size, 1)
+
+
+def test_re_gnn_creation_with_resmlp():
+    """Test ReGNN with use_resmlp=True"""
+    config = ReGNNConfig.create(
+        num_moderators=10,
+        num_controlled=5,
+        layer_input_sizes=[5, 1],
+        use_resmlp=True,
+        vae=True,
+        output_mu_var=True,
+    )
+    model = ReGNN.from_config(config)
+    assert isinstance(model, ReGNN)
+    
+    # Verify ResMLP is being used
+    from regnn.model.regnn import VAE, ResMLP
+    assert isinstance(model.index_prediction_model.mlp, VAE)
+    assert isinstance(model.index_prediction_model.mlp.base_model, ResMLP)
+    
+    # Test forward pass
+    model.train()
+    batch_size = 2
+    moderators = torch.randn(batch_size, 10)
+    focal_predictor = torch.randn(batch_size)
+    controlled_vars = torch.randn(batch_size, 5)
+    output = model(moderators, focal_predictor, controlled_vars)
+    assert len(output) == 3
+    assert output[0].shape == (batch_size, 1)
+
+
+def test_re_gnn_creation_with_resmlp_no_vae():
+    """Test ReGNN with use_resmlp=True and vae=False"""
+    config = ReGNNConfig.create(
+        num_moderators=10,
+        num_controlled=5,
+        layer_input_sizes=[5, 1],
+        use_resmlp=True,
+        vae=False,
+    )
+    model = ReGNN.from_config(config)
+    assert isinstance(model, ReGNN)
+    
+    # Verify ResMLP is being used directly (no VAE wrapper)
+    from regnn.model.regnn import ResMLP
+    assert isinstance(model.index_prediction_model.mlp, ResMLP)
+    
+    # Test forward pass
+    model.train()
+    batch_size = 2
+    moderators = torch.randn(batch_size, 10)
+    focal_predictor = torch.randn(batch_size)
+    controlled_vars = torch.randn(batch_size, 5)
+    output = model(moderators, focal_predictor, controlled_vars)
+    assert output.shape == (batch_size, 1)
+
+
+def test_re_gnn_creation_with_resmlp_ensemble():
+    """Test ReGNN with use_resmlp=True and n_ensemble>1"""
+    config = ReGNNConfig.create(
+        num_moderators=10,
+        num_controlled=5,
+        layer_input_sizes=[5, 1],
+        use_resmlp=True,
+        vae=True,
+        n_ensemble=3,
+    )
+    model = ReGNN.from_config(config)
+    assert isinstance(model, ReGNN)
+    
+    # Verify ResMLP ensemble is being used
+    from regnn.model.regnn import VAE, MLPEnsemble, ResMLP
+    assert isinstance(model.index_prediction_model.mlp, VAE)
+    assert isinstance(model.index_prediction_model.mlp.base_model, MLPEnsemble)
+    assert all(isinstance(m, ResMLP) for m in model.index_prediction_model.mlp.base_model.models)
+    
+    # Test forward pass
+    model.train()
+    batch_size = 2
+    moderators = torch.randn(batch_size, 10)
+    focal_predictor = torch.randn(batch_size)
+    controlled_vars = torch.randn(batch_size, 5)
+    output = model(moderators, focal_predictor, controlled_vars)
+    assert output.shape == (batch_size, 1)
+

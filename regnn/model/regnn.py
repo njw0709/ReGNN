@@ -48,16 +48,84 @@ class MLP(nn.Module):
         return x
 
 
-class MLPEnsemble(nn.Module):
-    """Ensemble of MLP models that averages their outputs."""
+class ResMLP(nn.Module):
+    """MLP with residual connections between layers."""
 
     @classmethod
-    def from_config(cls, config: MLPConfig, n_ensemble):
+    def from_config(cls, config: MLPConfig):
+        return cls(
+            layer_input_sizes=config.layer_input_sizes,
+            dropout=config.dropout,
+            device=config.device,
+        )
+
+    def __init__(
+        self,
+        layer_input_sizes: List[int],
+        dropout: float = 0.0,
+        device: str = "cpu",
+    ):
+        super(ResMLP, self).__init__()
+        self.layer_input_sizes = layer_input_sizes
+        self.num_layers = len(layer_input_sizes) - 1
+        self.dropout_rate = dropout
+        if self.dropout_rate > 0.0:
+            self.dropout = nn.Dropout(dropout)
+        self.device = device
+
+        self.layers = nn.ModuleList(
+            [
+                nn.Linear(layer_input_sizes[i], layer_input_sizes[i + 1])
+                for i in range(self.num_layers)
+            ]
+        )
+
+        # Create projection layers for residual connections when dimensions don't match
+        self.projections = nn.ModuleList()
+        for i in range(
+            self.num_layers - 1
+        ):  # Exclude final layer from residual connections
+            if layer_input_sizes[i] != layer_input_sizes[i + 1]:
+                self.projections.append(
+                    nn.Linear(layer_input_sizes[i], layer_input_sizes[i + 1])
+                )
+            else:
+                self.projections.append(None)  # No projection needed
+
+    def forward(self, x):
+        for i, layer in enumerate(self.layers[:-1]):
+            identity = x
+
+            # Apply linear layer
+            out = layer(x)
+
+            # Apply residual connection
+            if self.projections[i] is not None:
+                identity = self.projections[i](identity)
+            out = out + identity
+
+            # Apply activation after residual
+            x = F.gelu(out)
+
+            if self.dropout_rate > 0.0:
+                x = self.dropout(x)
+
+        # Final layer without activation or residual
+        x = self.layers[-1](x)
+        return x
+
+
+class MLPEnsemble(nn.Module):
+    """Ensemble of MLP or ResMLP models that averages their outputs."""
+
+    @classmethod
+    def from_config(cls, config: MLPConfig, n_ensemble, use_resmlp: bool = False):
         return cls(
             n_models=n_ensemble,
             layer_input_sizes=config.layer_input_sizes,
             dropout=config.dropout,
             device=config.device,
+            use_resmlp=use_resmlp,
         )
 
     def __init__(
@@ -66,11 +134,13 @@ class MLPEnsemble(nn.Module):
         layer_input_sizes,
         dropout: float = 0.0,
         device: str = "cpu",
+        use_resmlp: bool = False,
     ):
         super(MLPEnsemble, self).__init__()
+        model_class = ResMLP if use_resmlp else MLP
         self.models = nn.ModuleList(
             [
-                MLP(
+                model_class(
                     layer_input_sizes,
                     dropout=dropout,
                     device=device,
@@ -86,20 +156,23 @@ class MLPEnsemble(nn.Module):
 
 
 class VAE(nn.Module):
-    """Variational Autoencoder that wraps MLP or MLPEnsemble.
+    """Variational Autoencoder that wraps MLP, ResMLP, or their ensembles.
 
-    Outputs mu and logvar for variational inference. Can wrap either a single MLP
-    or an ensemble of MLPs based on n_ensemble parameter.
+    Outputs mu and logvar for variational inference. Can wrap either a single MLP/ResMLP
+    or an ensemble based on n_ensemble and use_resmlp parameters.
     """
 
     @classmethod
-    def from_config(cls, config: MLPConfig, n_ensemble: int = 1):
+    def from_config(
+        cls, config: MLPConfig, n_ensemble: int = 1, use_resmlp: bool = False
+    ):
         return cls(
             layer_input_sizes=config.layer_input_sizes,
             n_ensemble=n_ensemble,
             dropout=config.dropout,
             device=config.device,
             output_mu_var=config.output_mu_var,
+            use_resmlp=use_resmlp,
         )
 
     def __init__(
@@ -109,6 +182,7 @@ class VAE(nn.Module):
         dropout: float = 0.0,
         device: str = "cpu",
         output_mu_var: bool = False,
+        use_resmlp: bool = False,
     ):
         super(VAE, self).__init__()
         self.output_mu_var = output_mu_var
@@ -118,9 +192,10 @@ class VAE(nn.Module):
         # Double the output dimension to accommodate both mu and logvar
         modified_layer_sizes = layer_input_sizes[:-1] + [layer_input_sizes[-1] * 2]
 
-        # Create either MLP or MLPEnsemble based on n_ensemble
+        # Create either MLP/ResMLP or MLPEnsemble based on n_ensemble and use_resmlp
+        model_class = ResMLP if use_resmlp else MLP
         if n_ensemble == 1:
-            self.base_model = MLP(
+            self.base_model = model_class(
                 layer_input_sizes=modified_layer_sizes,
                 dropout=dropout,
                 device=device,
@@ -131,6 +206,7 @@ class VAE(nn.Module):
                 layer_input_sizes=modified_layer_sizes,
                 dropout=dropout,
                 device=device,
+                use_resmlp=use_resmlp,
             )
 
     def reparametrization(self, mu, logvar):
@@ -174,6 +250,7 @@ class IndexPredictionModel(nn.Module):
             dropout=config.dropout,
             n_ensemble=config.n_ensemble,
             output_mu_var=config.output_mu_var,
+            use_resmlp=config.use_resmlp,
         )
 
     def __init__(
@@ -191,6 +268,7 @@ class IndexPredictionModel(nn.Module):
         dropout: float = 0.0,
         n_ensemble: int = 1,
         output_mu_var: bool = True,
+        use_resmlp: bool = False,
     ):
         super(IndexPredictionModel, self).__init__()
         self.vae = vae
@@ -199,6 +277,7 @@ class IndexPredictionModel(nn.Module):
         self.batch_norm = batch_norm
         self.dropout_rate = dropout
         self.n_ensemble = n_ensemble
+        self.use_resmlp = use_resmlp
 
         # if num_moderators is a list, then check following:
         if isinstance(num_moderators, list):
@@ -259,6 +338,7 @@ class IndexPredictionModel(nn.Module):
                     output_mu_var=output_mu_var,
                     dropout=dropout,
                     device=device,
+                    use_resmlp=use_resmlp,
                 )
             elif n_ensemble > 1:
                 self.mlp = MLPEnsemble(
@@ -266,9 +346,11 @@ class IndexPredictionModel(nn.Module):
                     layer_input_sizes,
                     dropout=dropout,
                     device=device,
+                    use_resmlp=use_resmlp,
                 )
             else:
-                self.mlp = MLP(
+                model_class = ResMLP if use_resmlp else MLP
+                self.mlp = model_class(
                     layer_input_sizes,
                     dropout=dropout,
                     device=device,
@@ -291,6 +373,7 @@ class IndexPredictionModel(nn.Module):
                             output_mu_var=output_mu_var,
                             dropout=dropout,
                             device=device,
+                            use_resmlp=use_resmlp,
                         )
                     )
                 elif n_ensemble > 1:
@@ -300,11 +383,13 @@ class IndexPredictionModel(nn.Module):
                             layer_input_sizes,
                             dropout=dropout,
                             device=device,
+                            use_resmlp=use_resmlp,
                         )
                     )
                 else:
+                    model_class = ResMLP if use_resmlp else MLP
                     self.mlp.append(
-                        MLP(
+                        model_class(
                             layer_input_sizes,
                             dropout=dropout,
                             device=device,
@@ -395,6 +480,7 @@ class ReGNN(nn.Module):
             # interaction_direction=config.interaction_direction,
             n_ensemble=config.nn_config.n_ensemble,
             use_closed_form_linear_weights=config.use_closed_form_linear_weights,
+            use_resmlp=config.nn_config.use_resmlp,
         )
 
     def __init__(
@@ -417,6 +503,7 @@ class ReGNN(nn.Module):
         # interaction_direction: str = "positive",
         n_ensemble: int = 1,
         use_closed_form_linear_weights: bool = False,
+        use_resmlp: bool = False,
     ):
         super(ReGNN, self).__init__()
         self.vae = vae
@@ -474,6 +561,7 @@ class ReGNN(nn.Module):
             device=device,
             dropout=dropout,
             n_ensemble=n_ensemble,
+            use_resmlp=use_resmlp,
         )
 
         self.device = device

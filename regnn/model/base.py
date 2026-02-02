@@ -53,6 +53,7 @@ class IndexPredictionConfig(MLPConfig):
         ..., description="Number of moderator variables"
     )
     n_ensemble: int = Field(1, ge=1, description="Number of MLP models to ensemble")
+    use_resmlp: bool = Field(False, description="Whether to use ResidualMLP instead of MLP")
     svd: SVDConfig = Field(default_factory=SVDConfig)
 
     @field_validator("svd")
@@ -109,6 +110,7 @@ class ReGNNConfig(BaseModel):
             "output_mu_var",
             "svd",
             "n_ensemble",
+            "use_resmlp",
         }
 
         # Split kwargs between nn_config and main config
