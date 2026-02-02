@@ -195,13 +195,13 @@ def test_regnn_with_softtree():
     model = ReGNN.from_config(config)
 
     batch_size = 32
-    moderators = torch.randn(batch_size, 1, 10)
-    focal_predictor = torch.randn(batch_size, 1, 1)  # Fixed: should be (batch, 1, 1)
-    controlled_predictors = torch.randn(batch_size, 1, 5)
+    moderators = torch.randn(batch_size, 10)
+    focal_predictor = torch.randn(batch_size)
+    controlled_predictors = torch.randn(batch_size, 5)
 
     output = model(moderators, focal_predictor, controlled_predictors)
     assert isinstance(output, torch.Tensor)
-    assert output.shape == (batch_size, 1, 1)
+    assert output.shape == (batch_size, 1)
 
 
 def test_softtree_vae_validation_error():

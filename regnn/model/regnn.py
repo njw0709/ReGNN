@@ -654,7 +654,8 @@ class IndexPredictionModel(nn.Module):
                 for i, mod in enumerate(moderators):
                     if mod.dim() == 1:
                         mod = torch.unsqueeze(mod, 1)
-                    normed_mods.append(self.bns[i](mod))
+                    normed_mod = self.bns[i](mod)
+                    normed_mods.append(normed_mod)
                 moderators = normed_mods  # return the list of batch-normalized tensors
                 predicted_index = moderators
             else:
@@ -662,15 +663,11 @@ class IndexPredictionModel(nn.Module):
                     moderators = torch.unsqueeze(moderators, 1)
                 predicted_index = self.bn(moderators)
         else:
-            # Ensure proper shape for predicted_index (batch, 1, features)
+            # Keep 2D shape for predicted_index
             if isinstance(moderators, list):
                 predicted_index = moderators
             else:
-                if moderators.dim() == 2:
-                    # Add middle dimension for consistency
-                    predicted_index = moderators.unsqueeze(1)
-                else:
-                    predicted_index = moderators
+                predicted_index = moderators
         if self.vae:
             if not self.training:
                 return predicted_index, log_vars
@@ -801,25 +798,26 @@ class ReGNN(nn.Module):
                 init.kaiming_normal_(module.weight)
 
     def _get_linear_term_variables(self, moderators, focal_predictor, controlled_vars):
+        # Keep all tensors in 2D format (batch_size, features)
         if not self.control_moderators:
             all_linear_vars = controlled_vars
         else:
             if self.has_technical_controlled_vars and self.control_moderators:
                 if self.num_models == 1:
-                    all_linear_vars = torch.cat((controlled_vars, moderators), 2)
+                    all_linear_vars = torch.cat((controlled_vars, moderators), 1)
                 else:
-                    all_linear_vars = torch.cat((controlled_vars, *moderators), 2)
+                    all_linear_vars = torch.cat((controlled_vars, *moderators), 1)
             elif not self.has_technical_controlled_vars and self.control_moderators:
                 if self.num_models == 1:
                     all_linear_vars = moderators
                 else:
-                    all_linear_vars = torch.cat([*moderators], 2)
+                    all_linear_vars = torch.cat([*moderators], 1)
             elif self.has_technical_controlled_vars and not self.control_moderators:
                 all_linear_vars = controlled_vars
             else:
                 all_linear_vars = 0.0
         if self.use_closed_form_linear_weights:
-            all_linear_vars = torch.cat([all_linear_vars, focal_predictor], 2)
+            all_linear_vars = torch.cat([all_linear_vars, focal_predictor], 1)
         return all_linear_vars
 
     def forward(
@@ -865,16 +863,15 @@ class ReGNN(nn.Module):
 
         if isinstance(predicted_index, list):
             predicted_index = torch.cat(
-                predicted_index, dim=2
-            )  # Shape: (batch_size, 1, num_models)
+                predicted_index, dim=1
+            )  # Shape: (batch_size, total_features)
 
         # compute outcome
         if not self.use_closed_form_linear_weights:
             # Calculate interaction term based on number of models
-            if isinstance(predicted_index, list):
-                predicted_interaction_term = predicted_index.sum(
-                    dim=-1, keepdim=True
-                )  # Shape: (batch_size, 1, 1)
+            # For multiple models, sum the predicted indices to get single interaction value
+            if predicted_index.shape[1] > 1:
+                predicted_interaction_term = predicted_index.sum(dim=1, keepdim=True)
             else:
                 predicted_interaction_term = predicted_index
             predicted_interaction_term = predicted_interaction_term * focal_predictor
@@ -901,9 +898,8 @@ class ReGNN(nn.Module):
         else:
             # Build design matrix with predictors and interaction
             X_full = torch.cat(
-                [all_linear_vars, predicted_index * focal_predictor], dim=2
-            )  # shape: [batch, 1, n_terms]
-            X_full = X_full.reshape(X_full.size(0), -1)  # shape: [batch, n_terms]
+                [all_linear_vars, predicted_index * focal_predictor], dim=1
+            )  # shape: [batch, n_terms]
 
             # Add intercept column (constant ones)
             ones = torch.ones(X_full.size(0), 1, device=X_full.device)
@@ -941,7 +937,7 @@ class ReGNN(nn.Module):
                     weights = (Vh.t() * S_inv.unsqueeze(-1)) @ (U.t() @ y)
 
             # Predict outcome (keep consistent shape)
-            outcome = (X_full @ weights).view(-1, 1, 1)
+            outcome = (X_full @ weights).view(-1, 1)
 
         if self.vae:
             if not self.training:
