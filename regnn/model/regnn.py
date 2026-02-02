@@ -246,10 +246,10 @@ class SoftTree(nn.Module):
             parent_prob = path_probs_list[node_idx]
 
             # Probability of going left
-            left_prob = parent_prob * routing_probs[:, node_idx:node_idx+1]
-            
-            # Probability of going right  
-            right_prob = parent_prob * (1 - routing_probs[:, node_idx:node_idx+1])
+            left_prob = parent_prob * routing_probs[:, node_idx : node_idx + 1]
+
+            # Probability of going right
+            right_prob = parent_prob * (1 - routing_probs[:, node_idx : node_idx + 1])
 
             # Append in order (left then right for binary tree structure)
             if left_child_idx < total_nodes:
@@ -846,7 +846,9 @@ class ReGNN(nn.Module):
         if focal_predictor.ndim == 1:
             focal_predictor = focal_predictor.unsqueeze(1).clone()
         elif focal_predictor.ndim == 3:
-            focal_predictor = focal_predictor.reshape(focal_predictor.shape[0], -1).clone()
+            focal_predictor = focal_predictor.reshape(
+                focal_predictor.shape[0], -1
+            ).clone()
         else:
             focal_predictor = focal_predictor.clone()
 
@@ -866,7 +868,8 @@ class ReGNN(nn.Module):
                 moderators = moderators.clone()
         else:
             moderators = [
-                m.reshape(m.shape[0], -1).clone() if m.ndim == 3 else m.clone() for m in moderators
+                m.reshape(m.shape[0], -1).clone() if m.ndim == 3 else m.clone()
+                for m in moderators
             ]
 
         if self.include_bias_focal_predictor:
