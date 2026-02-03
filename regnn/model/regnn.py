@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import torch.nn.init as init
 from typing import Union, Sequence, List
 import numpy as np
+from torch.nn.utils import spectral_norm
 from .base import MLPConfig, IndexPredictionConfig, ReGNNConfig, TreeConfig
 
 
@@ -33,7 +34,7 @@ class MLP(nn.Module):
         self.device = device
         self.layers = nn.ModuleList(
             [
-                nn.Linear(layer_input_sizes[i], layer_input_sizes[i + 1])
+                spectral_norm(nn.Linear(layer_input_sizes[i], layer_input_sizes[i + 1]))
                 for i in range(self.num_layers)
             ]
         )
@@ -75,7 +76,7 @@ class ResMLP(nn.Module):
 
         self.layers = nn.ModuleList(
             [
-                nn.Linear(layer_input_sizes[i], layer_input_sizes[i + 1])
+                spectral_norm(nn.Linear(layer_input_sizes[i], layer_input_sizes[i + 1]))
                 for i in range(self.num_layers)
             ]
         )
@@ -130,6 +131,7 @@ class SoftTree(nn.Module):
             depth=config.depth,
             sharpness=config.sharpness,
             dropout=config.dropout,
+            batch_norm=config.batch_norm,
             device=config.device,
         )
 
@@ -140,6 +142,7 @@ class SoftTree(nn.Module):
         depth: int = 5,
         sharpness: float = 1.0,
         dropout: float = 0.0,
+        batch_norm: bool = False,
         device: str = "cpu",
     ):
         super(SoftTree, self).__init__()
@@ -148,6 +151,7 @@ class SoftTree(nn.Module):
         self.depth = depth
         self.sharpness = sharpness
         self.dropout_rate = dropout
+        self.batch_norm_enabled = batch_norm
         self.device = device
 
         # Number of internal nodes and leaf nodes
@@ -167,6 +171,11 @@ class SoftTree(nn.Module):
 
         # Leaf node parameters (output values)
         self.leaf_weights = nn.Parameter(torch.randn(self.num_leaf_nodes, output_dim))
+
+        # Batch normalization layer (applied to final output)
+        # affine=False means no learnable weight and bias parameters
+        if self.batch_norm_enabled:
+            self.batch_norm = nn.BatchNorm1d(output_dim, affine=False)
 
         self._initialize_weights()
 
@@ -210,6 +219,10 @@ class SoftTree(nn.Module):
         # Compute weighted sum of leaf outputs
         # Shape: (batch_size, num_leaf_nodes) @ (num_leaf_nodes, output_dim) -> (batch_size, output_dim)
         output = torch.matmul(leaf_probs, self.leaf_weights)
+
+        # Apply batch normalization if enabled
+        if self.batch_norm_enabled:
+            output = self.batch_norm(output)
 
         return output
 
@@ -365,6 +378,7 @@ class SoftTreeEnsemble(nn.Module):
             depth=config.depth,
             sharpness=config.sharpness,
             dropout=config.dropout,
+            batch_norm=config.batch_norm,
             device=config.device,
         )
 
@@ -376,9 +390,13 @@ class SoftTreeEnsemble(nn.Module):
         depth: int = 5,
         sharpness: float = 1.0,
         dropout: float = 0.0,
+        batch_norm: bool = False,
         device: str = "cpu",
     ):
         super(SoftTreeEnsemble, self).__init__()
+        self.output_dim = output_dim
+        self.batch_norm_enabled = batch_norm
+
         self.models = nn.ModuleList(
             [
                 SoftTree(
@@ -387,15 +405,26 @@ class SoftTreeEnsemble(nn.Module):
                     depth=depth,
                     sharpness=sharpness,
                     dropout=dropout,
+                    batch_norm=False,  # Apply batch norm after ensemble averaging
                     device=device,
                 )
                 for _ in range(n_models)
             ]
         )
 
+        # Batch normalization layer (applied after ensemble averaging)
+        # affine=False means no learnable weight and bias parameters
+        if self.batch_norm_enabled:
+            self.batch_norm = nn.BatchNorm1d(output_dim, affine=False)
+
     def forward(self, x):
         outputs = [model(x) for model in self.models]
         avg_output = torch.mean(torch.stack(outputs), dim=0)
+
+        # Apply batch normalization if enabled
+        if self.batch_norm_enabled:
+            avg_output = self.batch_norm(avg_output)
+
         return avg_output
 
     def compute_routing_regularization(self, x):

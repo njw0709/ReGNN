@@ -38,6 +38,10 @@ class TreeConfig(BaseModel):
         1.0, gt=0.0, description="Sharpness of sigmoid routing (higher = sharper)"
     )
     dropout: float = Field(0.0, ge=0.0, le=1.0, description="Dropout rate")
+    batch_norm: bool = Field(
+        False,
+        description="Whether to apply batch normalization to output (without affine parameters)",
+    )
     device: str = Field("cpu", description="Device to run model on")
 
 

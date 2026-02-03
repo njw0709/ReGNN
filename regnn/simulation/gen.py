@@ -139,34 +139,57 @@ class GroundTruthFactory:
         return {"model_type": "polynomial", "terms": poly_terms}
 
     # ==========================================
-    # 4. The Reconstructor (With Soft Logic)
+    # 4. Dense Generator (NEW)
+    # ==========================================
+    def build_dense_blueprint(self, n_features, hidden_dim=16, n_layers=2):
+        """
+        Creates a 'Dense' ground truth using a randomized Multi-Layer Perceptron (MLP).
+        Every output depends on a linear combination of ALL inputs (propagated through layers).
+
+        This mimics the 'Dense' regime where N approx d, or where many weak features combine.
+        """
+        layers = []
+
+        # Input Dimension -> Hidden Dimension
+        prev_dim = n_features
+
+        for _ in range(n_layers):
+            # Initialize weights (Xavier-like to keep variance stable)
+            limit = np.sqrt(6 / (prev_dim + hidden_dim))
+            W = self.rng.uniform(-limit, limit, size=(prev_dim, hidden_dim))
+            b = self.rng.uniform(-0.1, 0.1, size=hidden_dim)
+
+            layers.append({"W": W.tolist(), "b": b.tolist(), "activation": "tanh"})
+            prev_dim = hidden_dim
+
+        # Final Layer (Hidden -> Output 1)
+        limit = np.sqrt(6 / (prev_dim + 1))
+        W_out = self.rng.uniform(-limit, limit, size=(prev_dim, 1))
+        b_out = self.rng.uniform(-0.1, 0.1, size=1)
+
+        layers.append(
+            {"W": W_out.tolist(), "b": b_out.tolist(), "activation": "linear"}
+        )
+
+        return {"model_type": "dense_mlp", "layers": layers}
+
+    # ==========================================
+    # 5. The Reconstructor
     # ==========================================
     @staticmethod
     def get_function_from_json(blueprint):
 
-        # --- SOFT TREE LOGIC ---
         if blueprint["model_type"] == "soft_tree":
 
             def soft_tree_predict_single(x, node):
                 if node["type"] == "leaf":
                     return node["value"]
-
-                # Retrieve parameters
                 feat_val = x[node["feature_index"]]
                 threshold = node["threshold"]
                 sharpness = node["sharpness"]
-
-                # --- The Magic: Sigmoid Gating ---
-                # This calculates the probability of going LEFT
-                # If feat_val << threshold, exponent is large positive -> prob close to 1
-                # If feat_val >> threshold, exponent is large negative -> prob close to 0
                 prob_left = 1.0 / (1.0 + np.exp(-sharpness * (threshold - feat_val)))
-
-                # Recursively get values from children
                 val_left = soft_tree_predict_single(x, node["left"])
                 val_right = soft_tree_predict_single(x, node["right"])
-
-                # Weighted average based on probability
                 return (prob_left * val_left) + ((1.0 - prob_left) * val_right)
 
             return lambda X: np.array(
@@ -180,7 +203,6 @@ class GroundTruthFactory:
                 ]
             )
 
-        # --- Mixture Logic ---
         elif blueprint["model_type"] == "sparse_mixture":
             components = blueprint["components"]
             fast_components = [
@@ -201,7 +223,6 @@ class GroundTruthFactory:
 
             return predict_mix
 
-        # --- Polynomial Logic ---
         elif blueprint["model_type"] == "polynomial":
             terms = blueprint["terms"]
 
@@ -215,6 +236,41 @@ class GroundTruthFactory:
                 return y
 
             return predict_poly
+
+        # --- DENSE MLP RECONSTRUCTION ---
+        elif blueprint["model_type"] == "dense_mlp":
+            layers_data = blueprint["layers"]
+            # Pre-convert lists to numpy for speed
+            np_layers = []
+            for layer in layers_data:
+                np_layers.append(
+                    {
+                        "W": np.array(layer["W"]),
+                        "b": np.array(layer["b"]),
+                        "act": layer["activation"],
+                    }
+                )
+
+            def predict_dense(X):
+                # Ensure input is 2D matrix
+                H = np.array(X, dtype=float)
+                if H.ndim == 1:
+                    H = H.reshape(1, -1)
+
+                for layer in np_layers:
+                    # Linear Pass: H @ W + b
+                    H = np.dot(H, layer["W"]) + layer["b"]
+
+                    # Activation
+                    if layer["act"] == "tanh":
+                        H = np.tanh(H)
+                    elif layer["act"] == "relu":
+                        H = np.maximum(0, H)
+                    # "linear" does nothing
+
+                return H.flatten()  # Return 1D array of outcomes
+
+            return predict_dense
 
         else:
             raise ValueError(f"Unknown model type: {blueprint.get('model_type')}")

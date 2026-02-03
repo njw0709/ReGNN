@@ -775,6 +775,43 @@ wheels = [
 ]
 
 [[package]]
+name = "econml"
+version = "0.16.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "joblib" },
+    { name = "lightgbm" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pandas" },
+    { name = "scikit-learn" },
+    { name = "scipy", version = "1.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "scipy", version = "1.15.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "shap" },
+    { name = "sparse", version = "0.15.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "sparse", version = "0.17.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "statsmodels" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8d/99/16d00b532e2f499538df7ab7ed5da7447692e29a03ae60823714aed2383f/econml-0.16.0.tar.gz", hash = "sha256:4ca862a25e4dd789fd7356adaa04bfed3683056e5d25e90ea75cdab0535d56ff", size = 1703353 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0a/b7/c10bc28c562559f3e1a9c764ca82b30bc45a77bc3b523512999708b50749/econml-0.16.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:ab002b130b6a532c5803e41eb5dddf9d4ce6a8cc87528288f088063ec24f5101", size = 2300906 },
+    { url = "https://files.pythonhosted.org/packages/b8/22/3ceb7c312bd1e2be957d680b0e52af4b2cd5ccdffa1f98891159b4cb1ece/econml-0.16.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e76dba3724ff64103fd77122c504cc83b86859b16fd0d69226b3ca8e4b0b00dd", size = 5238381 },
+    { url = "https://files.pythonhosted.org/packages/93/b6/f4cfdb82d91ada7c4f8a153cbce49c7cbb0f17c2e2265df5bd397c8f4c14/econml-0.16.0-cp310-cp310-win_amd64.whl", hash = "sha256:93d63ee134b48e086ebf73d7113601a2ec636434c1fbdc4566b81efd540b81d7", size = 2266606 },
+    { url = "https://files.pythonhosted.org/packages/1b/92/6e7b21517eecc2427c6a1ac036698bd50a0c34d63bb0a766f2f89f8d1f9e/econml-0.16.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:29d4b4f4333d2ff410f74de81429b2688cdaac26aece23c64929cf59c3e5b2c4", size = 2301052 },
+    { url = "https://files.pythonhosted.org/packages/45/14/6aaad0a4362014b414f14714581eedb1edd1abc51faaa405cd9263f35581/econml-0.16.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f41a2e4d10e03d09ef360d5b24876d9bafa787749b495ef51e31ac1f0e7d4b0f", size = 5448061 },
+    { url = "https://files.pythonhosted.org/packages/19/bb/5452f076fd0adb2ae1e6182427a96b11f1e9a54872d77a81c6ca9a615ee7/econml-0.16.0-cp311-cp311-win_amd64.whl", hash = "sha256:b940d331c46e486f4a3f02f401bff2748705e7ca27e3ae3cc28591fb49d61542", size = 2266015 },
+    { url = "https://files.pythonhosted.org/packages/ae/e9/1335590f87d2a0e1e72e6cf54d517a2dbfa078ea2438c22bb05a111765c3/econml-0.16.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:936ef7b81e28f529958f0266df823c1fc4ab0fcba92aae6a931e574957b14062", size = 2299470 },
+    { url = "https://files.pythonhosted.org/packages/ae/78/eca39983a68f4ae9effae04f376b9318b865dedb0b9c04fcc36d890f7e81/econml-0.16.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:93090bdb34002f1612f7da1debc4b8f5bba04ff66f085aa05705980d3727bac1", size = 5397238 },
+    { url = "https://files.pythonhosted.org/packages/73/05/598d522efae52f5bc0c9803d46cb0711a022d843181d43df320ed71a53f0/econml-0.16.0-cp312-cp312-win_amd64.whl", hash = "sha256:df35aab28567e2fbb6250a50c3cd715d7f8a860d331067d3b9a01409f6e1ab0b", size = 2269163 },
+    { url = "https://files.pythonhosted.org/packages/2b/e1/4e1821a395dad14f0359af4ee103c26aa56ced215e63fde3d269c29b4d00/econml-0.16.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:421e71ff2b6d3cbad5f9cf2e48d204a97e5deeeab8095bf6fe07649a7321821b", size = 2292653 },
+    { url = "https://files.pythonhosted.org/packages/1d/9f/42d98c38d6dbabf085afb867c7cf3ce75f230e575402cc4431b1d92c660f/econml-0.16.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f3174cc888c1a7f98174756541d82ea0e95be668c376dd3e8810e82dc9732da2", size = 5367880 },
+    { url = "https://files.pythonhosted.org/packages/e4/28/14277d521b62e3fd3f658ef4dbd0157d959ce9a5449cf85e7e1bc7786183/econml-0.16.0-cp313-cp313-win_amd64.whl", hash = "sha256:90101abdf8767d1481826db30a888f647ae3031addd298bbbb30f3c535cbc274", size = 2268088 },
+    { url = "https://files.pythonhosted.org/packages/f9/75/7af1f38b1810eb2c74e16da04f17e020b08a9c5d818863f85a18d29656a1/econml-0.16.0-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:2f5808fff521c2853b374c95151605d9a2d738cbabf4631f947b0f612c207684", size = 2304934 },
+    { url = "https://files.pythonhosted.org/packages/75/48/a00ed150157d2cb50aeb687e529cb3f2497f7788b1f4b1edf97361541873/econml-0.16.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1dc8d07bb78fa455bf443a3df351d42e82a81f079be0533e403d65d5e0748f88", size = 5239507 },
+    { url = "https://files.pythonhosted.org/packages/2e/6f/d7e5d70c702ca4a8a6488623ff2a49132d616965a17582e350254db08cb2/econml-0.16.0-cp39-cp39-win_amd64.whl", hash = "sha256:f8eda2d41b691845aeb4ddf6e519b411612351e42bd98041eab03aa958e5600a", size = 2270523 },
+]
+
+[[package]]
 name = "exceptiongroup"
 version = "1.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1702,6 +1739,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6f/6b/c875b30a1ba490860c93da4cabf479e03f584eba06fe5963f6f6644653d8/lazy_loader-0.4.tar.gz", hash = "sha256:47c75182589b91a4e1a85a136c074285a5ad4d9f39c63e0d7fb76391c4574cd1", size = 15431 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/83/60/d497a310bde3f01cb805196ac61b7ad6dc5dcf8dce66634dc34364b20b4f/lazy_loader-0.4-py3-none-any.whl", hash = "sha256:342aa8e14d543a154047afb4ba8ef17f5563baad3fc610d7b15b213b0f119efc", size = 12097 },
+]
+
+[[package]]
+name = "lightgbm"
+version = "4.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy", version = "1.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "scipy", version = "1.15.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/68/0b/a2e9f5c5da7ef047cc60cef37f86185088845e8433e54d2e7ed439cce8a3/lightgbm-4.6.0.tar.gz", hash = "sha256:cb1c59720eb569389c0ba74d14f52351b573af489f230032a1c9f314f8bab7fe", size = 1703705 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/75/cffc9962cca296bc5536896b7e65b4a7cdeb8db208e71b9c0133c08f8f7e/lightgbm-4.6.0-py3-none-macosx_10_15_x86_64.whl", hash = "sha256:b7a393de8a334d5c8e490df91270f0763f83f959574d504c7ccb9eee4aef70ed", size = 2010151 },
+    { url = "https://files.pythonhosted.org/packages/21/1b/550ee378512b78847930f5d74228ca1fdba2a7fbdeaac9aeccc085b0e257/lightgbm-4.6.0-py3-none-macosx_12_0_arm64.whl", hash = "sha256:2dafd98d4e02b844ceb0b61450a660681076b1ea6c7adb8c566dfd66832aafad", size = 1592172 },
+    { url = "https://files.pythonhosted.org/packages/64/41/4fbde2c3d29e25ee7c41d87df2f2e5eda65b431ee154d4d462c31041846c/lightgbm-4.6.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:4d68712bbd2b57a0b14390cbf9376c1d5ed773fa2e71e099cac588703b590336", size = 3454567 },
+    { url = "https://files.pythonhosted.org/packages/42/86/dabda8fbcb1b00bcfb0003c3776e8ade1aa7b413dff0a2c08f457dace22f/lightgbm-4.6.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:cb19b5afea55b5b61cbb2131095f50538bd608a00655f23ad5d25ae3e3bf1c8d", size = 3569831 },
+    { url = "https://files.pythonhosted.org/packages/5e/23/f8b28ca248bb629b9e08f877dd2965d1994e1674a03d67cd10c5246da248/lightgbm-4.6.0-py3-none-win_amd64.whl", hash = "sha256:37089ee95664b6550a7189d887dbf098e3eadab03537e411f52c63c121e3ba4b", size = 1451509 },
 ]
 
 [[package]]
@@ -3538,6 +3593,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alibi" },
     { name = "artemis" },
+    { name = "econml" },
     { name = "jupyter" },
     { name = "lime" },
     { name = "matplotlib", version = "3.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -3569,6 +3625,7 @@ requires-dist = [
     { name = "alibi" },
     { name = "artemis" },
     { name = "black", marker = "extra == 'dev'" },
+    { name = "econml", specifier = ">=0.16.0" },
     { name = "jupyter", specifier = ">=1.1.1" },
     { name = "lime", specifier = ">=0.2.0.1" },
     { name = "matplotlib" },
@@ -4158,6 +4215,41 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/fd/42/b747618ec64be73023b84c9eed7a09f5a345f514f367369b863f6a1dbf4f/spacy_lookups_data-1.0.5.tar.gz", hash = "sha256:6f935c81f145bdcc84fc6115f648764285c7ff3e8ff246295046814e96dad63c", size = 98442761 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9f/9e/dae3acaacc7cbe8140acb181e09b9920f8b3ee81d2f1cd838d160c78f0c2/spacy_lookups_data-1.0.5-py2.py3-none-any.whl", hash = "sha256:466f21f087e4144bc93800679437ec5a17be7d0888734b1ba880b3ecb0978bc6", size = 98458367 },
+]
+
+[[package]]
+name = "sparse"
+version = "0.15.5"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.10'",
+]
+dependencies = [
+    { name = "numba", version = "0.60.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "numpy", marker = "python_full_version < '3.10'" },
+    { name = "scipy", version = "1.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8c/97/ef70784ece46b7071f357f89f69ae8b120f7a2dff1a70f9747563b709683/sparse-0.15.5.tar.gz", hash = "sha256:4c76ce0c96f5cd5c31b7e79e650f0022424c2b16f05f10049e9c6381ee4be266", size = 359719 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4f/37/fcb96b950a972dac48e0fc9e3c528130ca8d8d1e0f09e727df3c6342c7c8/sparse-0.15.5-py2.py3-none-any.whl", hash = "sha256:cf608731f8564916443427bca323fe118e8c25a712ddf02dbe7673a961139706", size = 117384 },
+]
+
+[[package]]
+name = "sparse"
+version = "0.17.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12'",
+    "python_full_version == '3.11.*'",
+    "python_full_version == '3.10.*'",
+]
+dependencies = [
+    { name = "numba", version = "0.61.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "numpy", marker = "python_full_version >= '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/63/74/5c674277fc3d61bd1863d233a8e1f7ddf35cb1adeeaf9973888629e7a9b1/sparse-0.17.0.tar.gz", hash = "sha256:6b1ad51a810c5be40b6f95e28513ec810fe1c785923bd83b2e4839a751df4bf7", size = 642387 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/fd/42a1720542199ae6ff0f9c37bbd55dd3033ddd7bbe00d68cde09d6824887/sparse-0.17.0-py2.py3-none-any.whl", hash = "sha256:1922d1d97f692b1061c4f03a1dd6ee21850aedc88e171aa845715f5069952f18", size = 259370 },
 ]
 
 [[package]]
