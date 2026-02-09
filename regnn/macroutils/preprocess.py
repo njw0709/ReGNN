@@ -52,6 +52,7 @@ def read_and_preprocess(
             'model_class': debias_cfg.model_class,
             'k': debias_cfg.k,
             'is_classifier': debias_cfg.is_classifier,
+            'sample_weight_col': debias_cfg.sample_weight_col,
             **debias_cfg.model_params
         }
         

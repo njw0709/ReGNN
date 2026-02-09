@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.model_selection import KFold
 
 
-def debias_treatment_kfold(X, D, model_class, k=5, is_classifier=False, **model_params):
+def debias_treatment_kfold(X, D, model_class, k=5, is_classifier=False, sample_weight=None, **model_params):
     """
     Generates centered treatment residuals and returns the trained models.
 
@@ -12,6 +12,7 @@ def debias_treatment_kfold(X, D, model_class, k=5, is_classifier=False, **model_
         model_class: The class of the model (e.g., LogisticRegression, Ridge).
         k (int): Number of folds.
         is_classifier (bool): True for Binary D (Propensity), False for Continuous D.
+        sample_weight (np.array, optional): Sample weights for model fitting. Default is None.
         **model_params: Parameters for the model.
 
     Returns:
@@ -34,10 +35,13 @@ def debias_treatment_kfold(X, D, model_class, k=5, is_classifier=False, **model_
         # 1. Split Data
         X_train, D_train = X[train_idx], D[train_idx]
         X_val = X[val_idx]
+        
+        # Split sample weights if provided
+        sample_weight_train = sample_weight[train_idx] if sample_weight is not None else None
 
         # 2. Instantiate new model for this fold
         model = model_class(**model_params)
-        model.fit(X_train, D_train)
+        model.fit(X_train, D_train, sample_weight=sample_weight_train)
 
         # 3. Store the model
         models.append(model)

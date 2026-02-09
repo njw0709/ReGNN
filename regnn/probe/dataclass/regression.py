@@ -21,6 +21,10 @@ class DebiasConfig(BaseModel):
         False, 
         description="True for binary focal predictor (propensity scores), False for continuous"
     )
+    sample_weight_col: Optional[str] = Field(
+        None,
+        description="Column name containing sample weights for model fitting"
+    )
     model_params: Dict[str, Any] = Field(
         default_factory=dict,
         description="Additional parameters to pass to the model"

@@ -40,7 +40,7 @@ binary_to_one_hot.__name__ = "binary_to_one_hot"
 def multi_cat_to_one_hot(
     df: pd.DataFrame, multi_cats: Optional[Sequence[str]] = None, dtype: str = "float"
 ) -> Tuple[pd.DataFrame, Dict[str, Sequence[str]]]:
-    if multi_cats is None:
+    if multi_cats is None or len(multi_cats) == 0:
         return df, {}
 
     # Store original categories for each column before transformation
@@ -219,6 +219,7 @@ def debias_focal_predictor(
     model_class: Optional[type] = None,
     k: int = 5,
     is_classifier: bool = False,
+    sample_weight_col: Optional[str] = None,
     **model_params,
 ) -> Tuple[pd.DataFrame, Dict]:
     """
@@ -237,6 +238,8 @@ def debias_focal_predictor(
         k: Number of folds for cross-validation
         is_classifier: True for binary focal predictor (uses propensity scores),
                       False for continuous focal predictor
+        sample_weight_col: Column name containing sample weights for model fitting.
+                          If None, all samples are weighted equally.
         **model_params: Additional parameters to pass to the model
 
     Returns:
@@ -259,6 +262,9 @@ def debias_focal_predictor(
     # Extract focal predictor and controlled predictors
     D = df[focal_col].values
     X = df[controlled_predictors].values
+    
+    # Extract sample weights if provided
+    sample_weight = df[sample_weight_col].values if sample_weight_col is not None else None
 
     # Set default model if not provided
     if model_class is None:
@@ -273,7 +279,7 @@ def debias_focal_predictor(
 
     # Call debias_treatment_kfold
     D_tilde, predictions, models = debias_treatment_kfold(
-        X, D, model_class, k=k, is_classifier=is_classifier, **model_params
+        X, D, model_class, k=k, is_classifier=is_classifier, sample_weight=sample_weight, **model_params
     )
 
     # Replace focal predictor column with residuals
