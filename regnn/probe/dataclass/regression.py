@@ -1,33 +1,51 @@
-from pydantic import Field, ConfigDict, field_validator, BaseModel
+from pydantic import (
+    Field,
+    ConfigDict,
+    field_validator,
+    BaseModel,
+    model_serializer,
+    field_serializer,
+)
+from pydantic.functional_serializers import PlainSerializer
+from typing_extensions import Annotated
 from numpydantic import NDArray, Shape
 from .base import ProbeData
 from typing import Dict, Optional, List, Union, Literal, Any
 import math
 import numpy as np
+import json
+
+
+def serialize_model_class(model_class: Optional[type]) -> Optional[str]:
+    """Serialize a model class to its fully qualified name"""
+    if model_class is None:
+        return None
+    return f"{model_class.__module__}.{model_class.__name__}"
 
 
 class DebiasConfig(BaseModel):
     """Configuration for debiasing the focal predictor"""
-    
-    model_config = ConfigDict(arbitrary_types_allowed=False)
-    
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     enabled: bool = Field(True, description="Whether to apply debiasing")
-    model_class: Optional[type] = Field(
-        None, 
-        description="Model class for debiasing (e.g., Ridge, RandomForestRegressor). If None, uses RandomForest"
+    model_class: Annotated[
+        Optional[type],
+        PlainSerializer(serialize_model_class, return_type=str, when_used="json"),
+    ] = Field(
+        None,
+        description="Model class for debiasing (e.g., Ridge, RandomForestRegressor). If None, uses RandomForest",
     )
     k: int = Field(5, ge=2, description="Number of folds for cross-validation")
     is_classifier: bool = Field(
-        False, 
-        description="True for binary focal predictor (propensity scores), False for continuous"
+        False,
+        description="True for binary focal predictor (propensity scores), False for continuous",
     )
     sample_weight_col: Optional[str] = Field(
-        None,
-        description="Column name containing sample weights for model fitting"
+        None, description="Column name containing sample weights for model fitting"
     )
     model_params: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Additional parameters to pass to the model"
+        default_factory=dict, description="Additional parameters to pass to the model"
     )
 
 
@@ -41,12 +59,11 @@ class ModeratedRegressionConfig(BaseModel):
     control_moderators: bool = Field(True)
     index_column_name: Union[str, List[str]]
     debias_treatment: bool = Field(
-        False, 
-        description="Whether to debias the focal predictor"
+        False, description="Whether to debias the focal predictor"
     )
     debias_config: Optional[DebiasConfig] = Field(
         None,
-        description="Advanced debiasing configuration. If None and debias_treatment=True, uses defaults"
+        description="Advanced debiasing configuration. If None and debias_treatment=True, uses defaults",
     )
 
 
