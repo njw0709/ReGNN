@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Sequence, Dict, Tuple, Optional, List
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.linear_model import Lasso, LogisticRegression
 from .debias import debias_treatment_kfold
 
 
@@ -269,13 +270,13 @@ def debias_focal_predictor(
     # Set default model if not provided
     if model_class is None:
         if is_classifier:
-            model_class = RandomForestClassifier
+            model_class = LogisticRegression
             if not model_params:
-                model_params = {"n_estimators": 100, "random_state": 42}
+                model_params = {"penalty": "l1", "solver": "liblinear", "random_state": 42}
         else:
-            model_class = RandomForestRegressor
+            model_class = Lasso
             if not model_params:
-                model_params = {"n_estimators": 100, "random_state": 42}
+                model_params = {"alpha": 1.0, "random_state": 42}
 
     # Call debias_treatment_kfold
     D_tilde, predictions, models = debias_treatment_kfold(
