@@ -188,9 +188,9 @@ def train(
             if regnn_model_cfg.nn_config.vae and isinstance(
                 training_hp.loss_options, KLDLossConfig
             ):
-                output_mu, output_log_var = predictions
+                outcome, mu, log_var = predictions
                 batch_loss_main = loss_func_train(
-                    output_mu, output_log_var, targets, output_mu
+                    targets, outcome, mu, log_var
                 )
             elif isinstance(training_hp.loss_options, TreeLossConfig):
                 # Tree routing regularization requires moderators and model

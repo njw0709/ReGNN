@@ -139,9 +139,9 @@ def objective_probe(
 
                 batch_main_loss_tensor = torch.tensor(0.0, device=device)
                 if model.vae and isinstance(loss_options, KLDLossConfig):
-                    output_mu, output_log_var = predictions
+                    outcome, mu, log_var = predictions
                     batch_main_loss_tensor = loss_fn_callable(
-                        output_mu, output_log_var, targets, output_mu
+                        targets, outcome, mu, log_var
                     )
                 elif isinstance(loss_options, TreeLossConfig):
                     # Tree routing regularization requires moderators and model
