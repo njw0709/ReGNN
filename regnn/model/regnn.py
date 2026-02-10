@@ -1041,48 +1041,65 @@ class ReGNN(nn.Module):
             )
 
         else:
-            # Build design matrix with predictors and interaction
-            X_full = torch.cat(
-                [all_linear_vars, predicted_index * focal_predictor], dim=1
-            )  # shape: [batch, n_terms]
+            # Compute interaction term with coefficient fixed to 1
+            # Calculate interaction term based on number of models
+            if predicted_index.shape[1] > 1:
+                predicted_interaction_term = predicted_index.sum(dim=1, keepdim=True)
+            else:
+                predicted_interaction_term = predicted_index
+            interaction_term = predicted_interaction_term * focal_predictor  # shape: [batch, 1]
+            
+            # Build design matrix with only linear predictors (excluding interaction)
+            # all_linear_vars already includes focal_predictor main effect
+            X_linear = all_linear_vars  # shape: [batch, n_linear_terms]
 
             # Add intercept column (constant ones)
-            ones = torch.ones(X_full.size(0), 1, device=X_full.device)
-            X_full = torch.cat([ones, X_full], dim=1)  # shape: [batch, n_terms + 1]
+            ones = torch.ones(X_linear.size(0), 1, device=X_linear.device)
+            X_linear = torch.cat([ones, X_linear], dim=1)  # shape: [batch, n_linear_terms + 1]
 
+            # Adjust target by subtracting interaction term (with coefficient 1)
+            y_adjusted = y.clone()
+            
             # Apply weights if provided
             if s_weights is not None:
                 sqrt_s_weights = torch.sqrt(s_weights).squeeze(-1)  # shape: [batch]
-                X_full = X_full * sqrt_s_weights.unsqueeze(-1)  # scale each row
-                y = y.squeeze(-1)
-                y = y * sqrt_s_weights
-            y = torch.squeeze(y, -1)
+                X_linear = X_linear * sqrt_s_weights.unsqueeze(-1)  # scale each row
+                y_adjusted = y_adjusted.squeeze(-1)
+                y_adjusted = y_adjusted * sqrt_s_weights
+                interaction_term_weighted = interaction_term.squeeze(-1) * sqrt_s_weights
+            else:
+                interaction_term_weighted = interaction_term.squeeze(-1)
+                
+            y_adjusted = torch.squeeze(y_adjusted, -1)
+            
+            # Subtract interaction term from targets
+            y_adjusted = y_adjusted - interaction_term_weighted
 
             # Add small ridge regularization for numerical stability
             eps = 1e-6
-            n = X_full.size(1)
-            XtX = X_full.t() @ X_full + eps * torch.eye(n, device=X_full.device)
-            Xty = X_full.t() @ y
+            n = X_linear.size(1)
+            XtX = X_linear.t() @ X_linear + eps * torch.eye(n, device=X_linear.device)
+            Xty = X_linear.t() @ y_adjusted
 
-            # Solve least squares
-            if X_full.size(0) < X_full.size(1):
+            # Solve least squares for linear terms only
+            if X_linear.size(0) < X_linear.size(1):
                 # Underdetermined → pseudo-inverse
-                weights = torch.linalg.pinv(X_full) @ y
+                weights = torch.linalg.pinv(X_linear) @ y_adjusted
             else:
                 try:
                     L = torch.linalg.cholesky(XtX)
                     weights = torch.cholesky_solve(Xty.unsqueeze(-1), L).squeeze(-1)
                 except:
                     # Fallback to SVD
-                    U, S, Vh = torch.linalg.svd(X_full, full_matrices=False)
+                    U, S, Vh = torch.linalg.svd(X_linear, full_matrices=False)
                     threshold = eps * S.max()
                     S_inv = torch.where(
                         S > threshold, 1.0 / (S + eps), torch.zeros_like(S)
                     )
-                    weights = (Vh.t() * S_inv.unsqueeze(-1)) @ (U.t() @ y)
+                    weights = (Vh.t() * S_inv.unsqueeze(-1)) @ (U.t() @ y_adjusted)
 
-            # Predict outcome (keep consistent shape)
-            outcome = (X_full @ weights).view(-1, 1)
+            # Predict outcome: linear terms + interaction term (with coefficient 1)
+            outcome = (X_linear @ weights).view(-1, 1) + interaction_term
 
         if self.vae:
             if not self.training:

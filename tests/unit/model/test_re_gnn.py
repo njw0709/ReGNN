@@ -251,3 +251,50 @@ def test_re_gnn_creation_with_resmlp_ensemble():
     output = model(moderators, focal_predictor, controlled_vars)
     assert output.shape == (batch_size, 1)
 
+
+def test_closed_form_with_interaction_constraint():
+    """
+    Test that closed-form linear weights implementation works correctly.
+    
+    The closed-form version should:
+    1. Accept y as input during training
+    2. Solve for linear coefficients analytically 
+    3. Maintain differentiability for the index prediction model
+    4. Constrain interaction coefficient to 1 (same as non-closed-form)
+    """
+    torch.manual_seed(42)
+    
+    n_samples = 200
+    n_moderators = 2
+    moderators = torch.randn(n_samples, n_moderators)
+    focal_predictor = torch.randn(n_samples, 1)
+    controlled_predictors = torch.randn(n_samples, 1)
+    
+    y = torch.randn(n_samples, 1)
+    
+    config = ReGNNConfig.create(
+        num_moderators=n_moderators,
+        num_controlled=1,
+        layer_input_sizes=[16, 8],
+        use_closed_form_linear_weights=True,
+        vae=False,
+    )
+    model = ReGNN.from_config(config)
+    
+    # Test forward pass with y
+    model.train()
+    outcome = model(moderators, focal_predictor, controlled_predictors, y)
+    assert outcome.shape == (n_samples, 1)
+    assert not torch.isnan(outcome).any()
+    
+    # Test that gradients flow
+    loss = ((outcome - y) ** 2).mean()
+    loss.backward()
+    
+    # Check that index prediction model has gradients
+    has_grad = False
+    for param in model.index_prediction_model.parameters():
+        if param.grad is not None and param.grad.abs().sum() > 0:
+            has_grad = True
+            break
+    assert has_grad, "Index prediction model should have gradients"
