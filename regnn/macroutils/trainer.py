@@ -4,7 +4,7 @@ import torch
 
 from regnn.data import train_test_split, ReGNNDataset, kfold_split, train_test_val_split
 from regnn.model import ReGNN
-from regnn.train import KLDLossConfig, TreeLossConfig
+from regnn.train import KLDLossConfig, TreeLossConfig, PriorPenaltyLossConfig
 from regnn.probe import Trajectory
 
 from regnn.probe.prober import ProbeManager
@@ -215,6 +215,10 @@ def train(
                 )
             elif isinstance(training_hp.loss_options, TreeLossConfig):
                 # Tree routing regularization requires moderators and model
+                moderators = batch_data['moderators']
+                batch_loss_main = loss_func_train(predictions, targets, moderators, model)
+            elif isinstance(training_hp.loss_options, PriorPenaltyLossConfig):
+                # Prior penalty requires moderators and model
                 moderators = batch_data['moderators']
                 batch_loss_main = loss_func_train(predictions, targets, moderators, model)
             else:

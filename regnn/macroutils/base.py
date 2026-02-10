@@ -5,6 +5,7 @@ from regnn.train import (
     TrainingHyperParams,
     KLDLossConfig,
     TreeLossConfig,
+    PriorPenaltyLossConfig,
 )
 from regnn.data import DataFrameReadInConfig
 from regnn.probe import (

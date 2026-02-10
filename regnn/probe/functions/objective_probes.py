@@ -14,6 +14,7 @@ from regnn.train import (
     KLDLossConfig,
     MSELossConfig,
     TreeLossConfig,
+    PriorPenaltyLossConfig,
 )
 from regnn.macroutils.utils import (
     setup_loss_and_optimizer,
@@ -145,6 +146,12 @@ def objective_probe(
                     )
                 elif isinstance(loss_options, TreeLossConfig):
                     # Tree routing regularization requires moderators and model
+                    moderators = batch_data["moderators"]
+                    batch_main_loss_tensor = loss_fn_callable(
+                        predictions, targets, moderators, model
+                    )
+                elif isinstance(loss_options, PriorPenaltyLossConfig):
+                    # Prior penalty requires moderators and model
                     moderators = batch_data["moderators"]
                     batch_main_loss_tensor = loss_fn_callable(
                         predictions, targets, moderators, model

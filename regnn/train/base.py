@@ -281,6 +281,16 @@ class TreeLossConfig(LossConfigs):
     )
 
 
+class PriorPenaltyLossConfig(LossConfigs):
+    """MSE Loss with L2 regularization on treatment effect predictions (prior penalty)"""
+    name: str = "PriorPenalty"
+    lambda_prior: float = Field(
+        0.01,
+        ge=0,
+        description="Lambda weight for L2 penalty on treatment effects (shrinkage toward zero)"
+    )
+
+
 class TrainingHyperParams(BaseModel):
     """Training specific hyperparameters"""
 

@@ -133,3 +133,68 @@ def tree_routing_regularized_loss(lambda_tree=0.01, reduction: str = "mean"):
         return total_loss
 
     return partial(loss, lambda_tree=lambda_tree, reduction=reduction)
+
+
+def prior_penalty_loss(lambda_prior=0.01, reduction: str = "mean"):
+    """Create a loss function that combines MSE with L2 penalty on treatment effects.
+
+    Implements Bayesian shrinkage prior: encourages treatment effects to be small
+    and centered around zero, but allows deviations when data provides evidence.
+
+    Args:
+        lambda_prior: Weight for L2 penalty on treatment effect predictions
+        reduction: How to reduce the loss ('mean', 'sum', or 'none')
+
+    Returns:
+        A loss function that takes (y_pred, y_true, moderators, model)
+    """
+
+    def loss(
+        y_pred, y_true, moderators, model, lambda_prior=lambda_prior, reduction=reduction
+    ):
+        """Combined MSE + L2 penalty on treatment effects.
+
+        Args:
+            y_pred: Model predictions
+            y_true: Ground truth targets
+            moderators: Input moderators (needed to compute treatment effects)
+            model: ReGNN model instance (to access index_prediction_model)
+        """
+        # Compute MSE loss
+        mse_loss = (y_pred - y_true) ** 2
+
+        # Compute L2 penalty on treatment effect predictions
+        prior_penalty = torch.tensor(0.0, device=y_pred.device)
+        if hasattr(model, "index_prediction_model"):
+            # Get predicted_index (treatment effect modifier)
+            index_model = model.index_prediction_model
+            # We need gradients to flow through predicted_index during training
+            if hasattr(index_model, "vae") and index_model.vae:
+                if model.training and hasattr(index_model, "output_mu_var") and index_model.output_mu_var:
+                    predicted_index, _, _ = index_model(moderators)
+                else:
+                    predicted_index, _ = index_model(moderators)
+            else:
+                predicted_index = index_model(moderators)
+
+            # Handle list output (multiple models)
+            if isinstance(predicted_index, list):
+                predicted_index = torch.cat(predicted_index, dim=1)
+
+            # Compute L2 penalty: sum of squared treatment effects
+            prior_penalty = torch.sum(predicted_index ** 2)
+
+        # Combine losses
+        if reduction == "mean":
+            total_loss = torch.mean(mse_loss) + lambda_prior * prior_penalty / y_pred.size(0)
+        elif reduction == "sum":
+            total_loss = torch.sum(mse_loss) + lambda_prior * prior_penalty
+        elif reduction == "none":
+            # For 'none', add regularization as scalar to each element
+            total_loss = mse_loss + (lambda_prior * prior_penalty / mse_loss.numel())
+        else:
+            raise NameError("reduction must be one of: sum, mean, none!")
+
+        return total_loss
+
+    return partial(loss, lambda_prior=lambda_prior, reduction=reduction)
