@@ -242,6 +242,229 @@ class TemperatureAnnealer:
         return new_temp
 
 
+class BatchSizeScheduler:
+    """Manages dynamic batch size scheduling during training.
+    
+    Updates batch size at scheduled intervals following a step-based schedule.
+    Signals when DataLoader recreation is needed to accommodate the new batch size.
+    
+    This is useful for gradually increasing batch size during training, which can
+    improve training stability and generalization in some cases.
+    """
+    
+    def __init__(self, config, initial_batch_size: int):
+        """Initialize batch size scheduler.
+        
+        Args:
+            config: StepBatchSizeConfig configuration
+            initial_batch_size: Starting batch size for training
+        """
+        self.config = config
+        self.initial_batch_size = initial_batch_size
+        self.current_batch_size = initial_batch_size
+        self.current_epoch = 0
+        
+    def get_batch_size(self, epoch: int) -> int:
+        """Compute batch size for given epoch.
+        
+        Args:
+            epoch: Current epoch (0-indexed)
+            
+        Returns:
+            Batch size for this epoch
+        """
+        # Step-based: batch_size = initial * gamma^(epoch // step_size)
+        num_steps = epoch // self.config.step_size
+        new_batch_size = self.initial_batch_size * (self.config.gamma ** num_steps)
+        
+        # Apply max_batch_size cap if specified
+        if self.config.max_batch_size is not None:
+            new_batch_size = min(new_batch_size, self.config.max_batch_size)
+            
+        return int(new_batch_size)
+    
+    def step(self, epoch: int) -> Tuple[int, bool]:
+        """Update epoch and return batch size and whether DataLoader needs recreation.
+        
+        Args:
+            epoch: Current epoch (0-indexed)
+            
+        Returns:
+            Tuple of (new_batch_size, should_recreate_dataloader)
+        """
+        self.current_epoch = epoch
+        new_batch_size = self.get_batch_size(epoch)
+        
+        # Check if batch size has changed
+        should_recreate = new_batch_size != self.current_batch_size
+        
+        if should_recreate:
+            self.current_batch_size = new_batch_size
+            
+        return new_batch_size, should_recreate
+    
+    def should_update(self, epoch: int) -> bool:
+        """Check if batch size should change at this epoch.
+        
+        Args:
+            epoch: Current epoch (0-indexed)
+            
+        Returns:
+            True if batch size changes at this epoch
+        """
+        current_bs = self.get_batch_size(epoch)
+        if epoch == 0:
+            return False
+        previous_bs = self.get_batch_size(epoch - 1)
+        return current_bs != previous_bs
+
+
+class PerGroupScheduler:
+    """Manages separate learning rate schedulers for different parameter groups.
+    
+    This wrapper allows different scheduler configurations for NN parameters and 
+    regression parameters, enabling fine-grained control over learning rate decay.
+    
+    PyTorch schedulers operate on all parameter groups in an optimizer. This class
+    works around that limitation by manually updating learning rates for specific
+    parameter groups based on their individual scheduler configurations.
+    """
+    
+    def __init__(
+        self,
+        optimizer: optim.Optimizer,
+        scheduler_configs: Dict[str, Optional[SchedulerConfigUnion]],
+        param_group_indices: Dict[str, int],
+        total_epochs: int,
+    ):
+        """Initialize per-group scheduler.
+        
+        Args:
+            optimizer: The optimizer containing all parameter groups
+            scheduler_configs: Dictionary mapping group names to scheduler configs
+                             e.g., {"nn": StepLRConfig(...), "regression": ExponentialLRConfig(...)}
+            param_group_indices: Dictionary mapping group names to parameter group indices
+                                e.g., {"nn": 0, "regression": 1}
+            total_epochs: Total number of training epochs
+        """
+        self.optimizer = optimizer
+        self.scheduler_configs = scheduler_configs
+        self.param_group_indices = param_group_indices
+        self.total_epochs = total_epochs
+        
+        # Store base learning rates for each group
+        self.base_lrs = {}
+        for group_name, idx in param_group_indices.items():
+            self.base_lrs[group_name] = optimizer.param_groups[idx]['lr']
+        
+        # Track whether any scheduler is ReduceLROnPlateau
+        self.is_reduce_on_plateau = any(
+            isinstance(config, ReduceLROnPlateauConfig)
+            for config in scheduler_configs.values()
+            if config is not None
+        )
+        
+        # Track current epoch for manual scheduling
+        self.current_epoch = 0
+        
+    def step(self, metrics: Optional[float] = None):
+        """Step all schedulers and update learning rates.
+        
+        Args:
+            metrics: Optional metric value for ReduceLROnPlateau schedulers
+        """
+        # Increment epoch counter first (so epoch 0 -> 1 on first step)
+        self.current_epoch += 1
+        
+        for group_name, config in self.scheduler_configs.items():
+            if config is None:
+                # No scheduler for this group, LR stays constant
+                continue
+                
+            idx = self.param_group_indices[group_name]
+            base_lr = self.base_lrs[group_name]
+            
+            # Compute new learning rate based on scheduler type
+            new_lr = self._compute_lr(config, base_lr, metrics)
+            
+            # Update the parameter group's learning rate
+            self.optimizer.param_groups[idx]['lr'] = new_lr
+    
+    def _compute_lr(
+        self,
+        config: SchedulerConfigUnion,
+        base_lr: float,
+        metrics: Optional[float] = None,
+    ) -> float:
+        """Compute learning rate for a given scheduler configuration.
+        
+        Args:
+            config: Scheduler configuration
+            base_lr: Base learning rate for this parameter group
+            metrics: Optional metric value for ReduceLROnPlateau
+            
+        Returns:
+            Computed learning rate for current epoch
+        """
+        epoch = self.current_epoch
+        
+        if isinstance(config, StepLRConfig):
+            # LR = base_lr * gamma^(epoch // step_size)
+            decay_factor = config.gamma ** (epoch // config.step_size)
+            return base_lr * decay_factor
+            
+        elif isinstance(config, ExponentialLRConfig):
+            # LR = base_lr * gamma^epoch
+            return base_lr * (config.gamma ** epoch)
+            
+        elif isinstance(config, CosineAnnealingLRConfig):
+            # Cosine annealing
+            T_max = config.T_max if config.T_max is not None else self.total_epochs
+            eta_min = config.eta_min
+            
+            # Standard cosine annealing formula
+            import math
+            return eta_min + (base_lr - eta_min) * (
+                1 + math.cos(math.pi * epoch / T_max)
+            ) / 2
+            
+        elif isinstance(config, ReduceLROnPlateauConfig):
+            # ReduceLROnPlateau requires stateful tracking of patience/cooldown
+            # This is complex to implement manually, so we'll use a PyTorch scheduler
+            # but only for this specific parameter group
+            # For now, return current LR (will be handled by a separate implementation)
+            # TODO: Implement stateful ReduceLROnPlateau tracking
+            return self.optimizer.param_groups[self.param_group_indices[
+                list(self.scheduler_configs.keys())[
+                    list(self.scheduler_configs.values()).index(config)
+                ]
+            ]]['lr']
+            
+        elif isinstance(config, WarmupCosineConfig):
+            # Linear warmup followed by cosine annealing
+            warmup_epochs = config.warmup_epochs
+            
+            if epoch < warmup_epochs:
+                # Linear warmup: start from very small LR to base_lr
+                start_factor = 1e-6
+                return base_lr * (start_factor + (1.0 - start_factor) * epoch / warmup_epochs)
+            else:
+                # Cosine annealing after warmup
+                T_max = (
+                    config.T_max if config.T_max is not None
+                    else self.total_epochs - warmup_epochs
+                )
+                eta_min = config.eta_min
+                epoch_after_warmup = epoch - warmup_epochs
+                
+                import math
+                return eta_min + (base_lr - eta_min) * (
+                    1 + math.cos(math.pi * epoch_after_warmup / T_max)
+                ) / 2
+        else:
+            raise ValueError(f"Unknown scheduler type: {type(config)}")
+
+
 def setup_loss_and_optimizer(
     model: ReGNN,
     training_hyperparams: TrainingHyperParams,  # Use the specific type
@@ -255,12 +478,18 @@ def setup_loss_and_optimizer(
         optim.lr_scheduler.CosineAnnealingLR,
         optim.lr_scheduler.ReduceLROnPlateau,
         optim.lr_scheduler.SequentialLR,
+        "PerGroupScheduler",
     ]],
 ]:
     """Setup loss function, regularization, optimizer, and scheduler based on TrainingHyperParams.
 
     Returns:
         Tuple of (loss_function, regularization, optimizer, scheduler)
+        
+    Note:
+        If per-group schedulers (scheduler_nn, scheduler_regression) are specified in 
+        optimizer_config, a PerGroupScheduler instance is returned. Otherwise, a standard
+        PyTorch scheduler is returned that applies to all parameter groups.
     """
 
     loss_opts = training_hyperparams.loss_options
@@ -330,11 +559,42 @@ def setup_loss_and_optimizer(
     )
 
     # 4. Setup Learning Rate Scheduler
-    scheduler = create_lr_scheduler(
-        optimizer,
-        optimizer_opts.scheduler,
-        training_hyperparams.epochs,
+    # Check if per-group schedulers are specified
+    has_per_group = (
+        optimizer_opts.scheduler_nn is not None or 
+        optimizer_opts.scheduler_regression is not None
     )
+    
+    if has_per_group:
+        # Use per-group schedulers (overrides global scheduler if both are set)
+        scheduler_configs = {
+            "nn": optimizer_opts.scheduler_nn,
+            "regression": optimizer_opts.scheduler_regression,
+        }
+        # If only one per-group scheduler is set, use global scheduler for the other
+        if optimizer_opts.scheduler_nn is None and optimizer_opts.scheduler is not None:
+            scheduler_configs["nn"] = optimizer_opts.scheduler
+        if optimizer_opts.scheduler_regression is None and optimizer_opts.scheduler is not None:
+            scheduler_configs["regression"] = optimizer_opts.scheduler
+            
+        param_group_indices = {
+            "nn": 0,  # First param group is NN parameters
+            "regression": 1,  # Second param group is regression parameters
+        }
+        
+        scheduler = PerGroupScheduler(
+            optimizer=optimizer,
+            scheduler_configs=scheduler_configs,
+            param_group_indices=param_group_indices,
+            total_epochs=training_hyperparams.epochs,
+        )
+    else:
+        # Use global scheduler (backward compatible behavior)
+        scheduler = create_lr_scheduler(
+            optimizer,
+            optimizer_opts.scheduler,
+            training_hyperparams.epochs,
+        )
 
     return loss_func, regularization, optimizer, scheduler
 

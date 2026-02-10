@@ -144,6 +144,15 @@ def train(
             training_hp.epochs
         )
 
+    # Initialize batch size scheduler if configured
+    batch_size_scheduler = None
+    if training_hp.batch_size_scheduler is not None:
+        from regnn.macroutils.utils import BatchSizeScheduler
+        batch_size_scheduler = BatchSizeScheduler(
+            training_hp.batch_size_scheduler,
+            training_hp.batch_size
+        )
+
     # Training Loop - Refactored for new ProbeManager
     global_iteration_counter = 0
     training_should_continue = True
@@ -151,6 +160,18 @@ def train(
     for epoch in range(training_hp.epochs):
         if not training_should_continue:
             break
+
+        # Update batch size if scheduled
+        if batch_size_scheduler:
+            new_batch_size, should_recreate = batch_size_scheduler.step(epoch)
+            if should_recreate:
+                print(f"Epoch {epoch}: Updating batch size from {train_dataloader.batch_size} to {new_batch_size}")
+                train_dataloader = TorchDataLoader(
+                    train_dataset,
+                    batch_size=new_batch_size,
+                    shuffle=training_hp.shuffle,
+                )
+                dataloaders_map[DataSource.TRAIN] = train_dataloader
 
         # Update temperature for SoftTree models
         if temperature_annealer:
@@ -319,7 +340,16 @@ def train(
 
         # Update learning rate scheduler
         if scheduler:
-            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+            from regnn.macroutils.utils import PerGroupScheduler
+            
+            # Check if this is a per-group scheduler or standard scheduler
+            is_per_group = isinstance(scheduler, PerGroupScheduler)
+            is_reduce_on_plateau = (
+                (is_per_group and scheduler.is_reduce_on_plateau) or
+                isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau)
+            )
+            
+            if is_reduce_on_plateau:
                 # ReduceLROnPlateau needs a metric to monitor
                 # Try to use test loss if available, otherwise use train loss
                 metric_value = avg_epoch_train_loss

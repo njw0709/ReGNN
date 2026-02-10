@@ -11,6 +11,10 @@ from regnn.train import (
     WeightDecayConfig,
     OptimizerConfig,
     LearningRateConfig,
+    StepLRConfig,
+    ExponentialLRConfig,
+    CosineAnnealingLRConfig,
+    StepBatchSizeConfig,
 )
 from regnn.macroutils import read_and_preprocess  # For data loading and preprocessing
 from regnn.probe import ModeratedRegressionConfig, generate_stata_command
@@ -94,11 +98,30 @@ def main():
         epochs=100,
         batch_size=1000,
         train_test_split_ratio=0.7,
+        # Example: Increase batch size during training
+        # This can improve training stability and generalization
+        # batch_size_scheduler=StepBatchSizeConfig(
+        #     step_size=20,      # Double batch size every 20 epochs
+        #     gamma=2,           # Multiply by 2
+        #     max_batch_size=4096  # Cap at 4096 to prevent OOM
+        # ),
+        # With the above config:
+        #   - Epochs 0-19: batch_size = 1000
+        #   - Epochs 20-39: batch_size = 2000
+        #   - Epochs 40-59: batch_size = 4000
+        #   - Epochs 60+: batch_size = 4096 (capped)
         optimizer_config=OptimizerConfig(
             weight_decay=WeightDecayConfig(
                 weight_decay_nn=0.02, weight_decay_regression=0.00
             ),
             lr=LearningRateConfig(lr_nn=0.001, lr_regression=0.02),
+            # Example: Use a global scheduler that applies to both parameter groups
+            # scheduler=StepLRConfig(step_size=20, gamma=0.5),
+            
+            # Example: Use different schedulers for NN vs regression parameters
+            # This allows fine-grained control over learning rate decay
+            # scheduler_nn=CosineAnnealingLRConfig(T_max=100, eta_min=1e-6),
+            # scheduler_regression=StepLRConfig(step_size=30, gamma=0.5),
         ),
         loss_options=MSELossConfig(
             reduction="mean",

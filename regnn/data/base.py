@@ -15,6 +15,7 @@ from .preprocess_fns import (
     convert_categorical_to_ordinal,
     standardize_cols,
     map_to_zero_one,
+    trim_and_normalize_weights,
     debias_focal_predictor,
 )
 from collections import defaultdict
@@ -28,6 +29,7 @@ function_registry = {
     "standardize_cols": standardize_cols,
     "convert_categorical_to_ordinal": convert_categorical_to_ordinal,
     "map_to_zero_one": map_to_zero_one,
+    "trim_and_normalize_weights": trim_and_normalize_weights,
     "debias_focal_predictor": debias_focal_predictor,
 }
 
@@ -217,12 +219,12 @@ class DataFrameReadInConfig(BaseModel):
             ),
         ]
 
-        # Add survey weight standardization if provided
+        # Add survey weight trimming and normalization if provided
         if self.survey_weight_col:
             steps.append(
                 PreprocessStep(
                     columns=[self.survey_weight_col],
-                    function=map_to_zero_one,
+                    function=trim_and_normalize_weights,
                 )
             )
 

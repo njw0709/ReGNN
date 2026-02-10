@@ -213,6 +213,101 @@ map_to_zero_one._reverse_transform = _reverse_map_to_zero_one
 map_to_zero_one.__name__ = "map_to_zero_one"
 
 
+def trim_and_normalize_weights(
+    df: pd.DataFrame, cols: Optional[Sequence[str]] = None
+) -> Tuple[pd.DataFrame, Dict]:
+    """
+    Trim survey weights at 1st and 99th percentiles, then normalize to [0,1].
+    
+    This function:
+    1. Computes the 1st and 99th percentiles of the weight column
+    2. Clips values at these percentiles (winsorization)
+    3. Re-normalizes the trimmed weights to [0,1] range using min-max scaling
+    
+    Args:
+        df: DataFrame containing the data
+        cols: List of column names to process (typically just the survey weight column)
+    
+    Returns:
+        Tuple of (modified DataFrame, metadata dict)
+        The metadata dict contains:
+            - percentile_1: The 1st percentile value
+            - percentile_99: The 99th percentile value
+            - min_max_dict: Min/max values after trimming for reverse transform
+    """
+    if cols is None:
+        cols = df.columns
+    
+    percentile_dict = {}
+    min_max_dict = {}
+    
+    for c in cols:
+        # Compute percentiles
+        p1 = df[c].quantile(0.01)
+        p99 = df[c].quantile(0.99)
+        
+        # Clip values at percentiles
+        df[c] = df[c].clip(lower=p1, upper=p99)
+        
+        # Store percentile values
+        percentile_dict[c] = (p1, p99)
+        
+        # Normalize to [0, 1] after trimming
+        col_min = df[c].min()
+        col_max = df[c].max()
+        df[c] = (df[c] - col_min) / (col_max - col_min)
+        
+        # Store min/max for reverse transform
+        min_max_dict[c] = (col_min, col_max)
+    
+    return_dict = {
+        "percentile_dict": percentile_dict,
+        "min_max_dict": min_max_dict,
+    }
+    return df, return_dict
+
+
+def _reverse_trim_and_normalize_weights(
+    df: pd.DataFrame,
+    cols: Optional[Sequence[str]] = None,
+    percentile_dict: Dict[str, Tuple[float, float]] = None,
+    min_max_dict: Dict[str, Tuple[float, float]] = None,
+    **kwargs,
+) -> Tuple[pd.DataFrame, Sequence[str]]:
+    """
+    Reverse the trim and normalize transformation.
+    
+    Note: This reverses the normalization but cannot fully reverse the trimming
+    (clipped values remain clipped). This is expected for winsorization.
+    
+    Args:
+        df: DataFrame with trimmed and normalized weights
+        cols: List of column names to reverse
+        percentile_dict: Dict of (p1, p99) values for each column
+        min_max_dict: Dict of (min, max) values after trimming for each column
+        **kwargs: Additional keyword arguments (ignored)
+    
+    Returns:
+        Tuple of (modified DataFrame, column names)
+    """
+    if cols is None:
+        cols = df.columns
+    if min_max_dict is None:
+        min_max_dict = {}
+    
+    for c in cols:
+        if c in min_max_dict and c in df.columns:
+            col_min, col_max = min_max_dict[c]
+            # Reverse the normalization
+            df[c] = (df[c] * (col_max - col_min)) + col_min
+    
+    return df, cols
+
+
+trim_and_normalize_weights._reverse_transform = _reverse_trim_and_normalize_weights
+trim_and_normalize_weights.__name__ = "trim_and_normalize_weights"
+
+
 def debias_focal_predictor(
     df: pd.DataFrame,
     columns: Optional[Sequence[str]] = None,

@@ -206,6 +206,22 @@ class TemperatureAnnealingConfig(BaseModel):
         return self
 
 
+class StepBatchSizeConfig(BaseModel):
+    """Configuration for step-based batch size scheduling"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+    type: Literal["step"] = "step"
+    step_size: int = Field(
+        ..., gt=0, description="Period of batch size increase (in epochs)"
+    )
+    gamma: int = Field(
+        ..., gt=1, description="Multiplicative factor for batch size increase (must be integer >= 2)"
+    )
+    max_batch_size: Optional[int] = Field(
+        None, gt=0, description="Maximum batch size (optional cap)"
+    )
+
+
 class OptimizerConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=False)
 
@@ -216,11 +232,34 @@ class OptimizerConfig(BaseModel):
         default_factory=LearningRateConfig, description="learning rate configurations"
     )
     scheduler: Optional[SchedulerConfigUnion] = Field(
-        None, description="Learning rate scheduler configuration"
+        None, description="Learning rate scheduler configuration (applies to all parameter groups if per-group schedulers not specified)"
+    )
+    scheduler_nn: Optional[SchedulerConfigUnion] = Field(
+        None,
+        description="Learning rate scheduler for NN parameters (overrides scheduler if set)"
+    )
+    scheduler_regression: Optional[SchedulerConfigUnion] = Field(
+        None,
+        description="Learning rate scheduler for regression parameters (overrides scheduler if set)"
     )
     temperature_annealing: Optional[TemperatureAnnealingConfig] = Field(
         None, description="Temperature annealing configuration for SoftTree models"
     )
+
+    @model_validator(mode="after")
+    def validate_scheduler_config(self):
+        """Validate scheduler configuration and warn if mixing global and per-group schedulers"""
+        has_global = self.scheduler is not None
+        has_per_group = self.scheduler_nn is not None or self.scheduler_regression is not None
+        
+        if has_global and has_per_group:
+            import warnings
+            warnings.warn(
+                "Both global 'scheduler' and per-group schedulers (scheduler_nn/scheduler_regression) are set. "
+                "Per-group schedulers will take precedence over the global scheduler.",
+                UserWarning
+            )
+        return self
 
 
 class MSELossConfig(LossConfigs):
@@ -248,7 +287,10 @@ class TrainingHyperParams(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=False)
 
     epochs: int = Field(100, gt=0, description="Number of training epochs")
-    batch_size: int = Field(32, gt=0, description="Training batch size")
+    batch_size: int = Field(32, gt=0, description="Initial training batch size")
+    batch_size_scheduler: Optional[StepBatchSizeConfig] = Field(
+        None, description="Batch size scheduler configuration"
+    )
     optimizer_config: OptimizerConfig = Field(
         default_factory=OptimizerConfig,
         description="optimizer configuration (i.e. weight decay, learning rate)",

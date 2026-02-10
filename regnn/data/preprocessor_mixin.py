@@ -38,6 +38,11 @@ class PreprocessorMixin:
                 focal_col = step.columns[0]
                 self.df_orig[focal_col] = df_temp[focal_col].values
 
+            # Update df_orig with trimmed weights if weight trimming was applied
+            if step.function.__name__ == "trim_and_normalize_weights":
+                weight_col = step.columns[0]
+                self.df_orig[weight_col] = df_temp[weight_col].values
+
             # Update column lists if columns were changed
             if isinstance(return_value, dict):
                 # For functions that return a categories dictionary (like multi_cat_to_one_hot)
