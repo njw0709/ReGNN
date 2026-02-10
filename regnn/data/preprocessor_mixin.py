@@ -33,6 +33,11 @@ class PreprocessorMixin:
             else:
                 df_temp, return_value = step.function(df_temp, step.columns)
 
+            # Update df_orig with residualized focal predictor if debiasing was applied
+            if step.function.__name__ == "debias_focal_predictor":
+                focal_col = step.columns[0]
+                self.df_orig[focal_col] = df_temp[focal_col].values
+
             # Update column lists if columns were changed
             if isinstance(return_value, dict):
                 # For functions that return a categories dictionary (like multi_cat_to_one_hot)

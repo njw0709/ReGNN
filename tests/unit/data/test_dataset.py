@@ -8,7 +8,9 @@ from regnn.data.preprocess_fns import (
     standardize_cols,
     multi_cat_to_one_hot,
     binary_to_one_hot,
+    debias_focal_predictor,
 )
+from sklearn.linear_model import Ridge
 
 
 @pytest.fixture
@@ -364,6 +366,89 @@ def test_df_orig_independence(sample_df):
     for _ in range(3):
         dataset.preprocess(inplace=True)
         dataset.reverse_preprocess(inplace=True)
+
+    # Verify df_orig remained unchanged
+    pd.testing.assert_frame_equal(dataset.df_orig, original_df)
+
+
+def test_df_orig_updated_with_debiasing(sample_df):
+    """Test that df_orig is updated with residualized focal predictor when debiasing is applied"""
+    # Create config with debias preprocessing step
+    config = ReGNNDatasetConfig(
+        focal_predictor="focal_predictor",
+        controlled_predictors=["control1", "control2"],
+        moderators=["moderator1", "moderator2"],
+        outcome="outcome",
+        survey_weights="weights",
+        rename_dict={},
+        df_dtypes={},
+        preprocess_steps=[
+            PreprocessStep(
+                columns=["focal_predictor"],
+                function=debias_focal_predictor,
+                reverse_transform_info={
+                    "controlled_predictors": ["control1", "control2"],
+                    "model_class": Ridge,
+                    "k": 3,
+                    "is_classifier": False,
+                },
+            ),
+        ],
+    )
+
+    # Create dataset and store original focal predictor values
+    dataset = ReGNNDataset(df=sample_df.copy(), config=config)
+    original_focal_values = dataset.df_orig["focal_predictor"].copy()
+
+    # Apply preprocessing (which includes debiasing)
+    dataset.preprocess(inplace=True)
+
+    # Verify that df_orig focal predictor has been updated (residualized)
+    # The residualized values should be different from the original
+    assert not np.allclose(
+        dataset.df_orig["focal_predictor"].values, original_focal_values.values
+    ), "df_orig focal predictor should be updated with residualized values"
+
+    # Verify that df and df_orig have the same focal predictor values after debiasing
+    np.testing.assert_array_equal(
+        dataset.df["focal_predictor"].values,
+        dataset.df_orig["focal_predictor"].values,
+        err_msg="df and df_orig should have the same residualized focal predictor values",
+    )
+
+    # Verify that other columns in df_orig remain unchanged
+    for col in ["control1", "control2", "moderator1", "moderator2", "outcome", "weights"]:
+        np.testing.assert_array_equal(
+            dataset.df_orig[col].values,
+            sample_df[col].values,
+            err_msg=f"Column {col} in df_orig should remain unchanged",
+        )
+
+
+def test_df_orig_independence_without_debiasing(sample_df):
+    """Test that df_orig remains unchanged when debiasing is NOT applied"""
+    config = ReGNNDatasetConfig(
+        focal_predictor="focal_predictor",
+        controlled_predictors=["control1", "control2"],
+        moderators=["moderator1", "moderator2"],
+        outcome="outcome",
+        survey_weights="weights",
+        rename_dict={},
+        df_dtypes={},
+        preprocess_steps=[
+            PreprocessStep(
+                columns=["control1", "control2"],
+                function=standardize_cols,
+            ),
+        ],
+    )
+
+    # Create dataset and store original data
+    dataset = ReGNNDataset(df=sample_df.copy(), config=config)
+    original_df = sample_df.copy()
+
+    # Apply preprocessing (no debiasing)
+    dataset.preprocess(inplace=True)
 
     # Verify df_orig remained unchanged
     pd.testing.assert_frame_equal(dataset.df_orig, original_df)
