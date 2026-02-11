@@ -17,6 +17,8 @@ from .base import (
     SchedulerConfigUnion,
     TemperatureAnnealingConfig,
     StepBatchSizeConfig,
+    PiecewiseBatchSizeConfig,
+    BatchSizeSchedulerConfigUnion,
 )
 
 __all__ = [
@@ -39,4 +41,6 @@ __all__ = [
     "SchedulerConfigUnion",
     "TemperatureAnnealingConfig",
     "StepBatchSizeConfig",
+    "PiecewiseBatchSizeConfig",
+    "BatchSizeSchedulerConfigUnion",
 ]

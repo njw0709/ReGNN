@@ -247,24 +247,36 @@ class TemperatureAnnealer:
 class BatchSizeScheduler:
     """Manages dynamic batch size scheduling during training.
     
-    Updates batch size at scheduled intervals following a step-based schedule.
-    Signals when DataLoader recreation is needed to accommodate the new batch size.
+    Supports two schedule types:
+    - Step-based (StepBatchSizeConfig): batch_size = initial * gamma^(epoch // step_size)
+    - Piecewise (PiecewiseBatchSizeConfig): arbitrary (epoch, batch_size) milestones
     
-    This is useful for gradually increasing batch size during training, which can
-    improve training stability and generalization in some cases.
+    Signals when DataLoader recreation is needed to accommodate the new batch size.
     """
     
     def __init__(self, config, initial_batch_size: int):
         """Initialize batch size scheduler.
         
         Args:
-            config: StepBatchSizeConfig configuration
-            initial_batch_size: Starting batch size for training
+            config: StepBatchSizeConfig or PiecewiseBatchSizeConfig configuration
+            initial_batch_size: Starting batch size for training (used as fallback
+                for piecewise schedules before the first milestone)
         """
         self.config = config
         self.initial_batch_size = initial_batch_size
-        self.current_batch_size = initial_batch_size
         self.current_epoch = 0
+
+        # For piecewise config, the first milestone at epoch 0 (if present)
+        # overrides the initial batch size
+        from regnn.train.base import PiecewiseBatchSizeConfig
+        if isinstance(config, PiecewiseBatchSizeConfig):
+            first_epoch, first_bs = config.milestones[0]
+            if first_epoch == 0:
+                self.current_batch_size = first_bs
+            else:
+                self.current_batch_size = initial_batch_size
+        else:
+            self.current_batch_size = initial_batch_size
         
     def get_batch_size(self, epoch: int) -> int:
         """Compute batch size for given epoch.
@@ -275,7 +287,15 @@ class BatchSizeScheduler:
         Returns:
             Batch size for this epoch
         """
-        # Step-based: batch_size = initial * gamma^(epoch // step_size)
+        from regnn.train.base import PiecewiseBatchSizeConfig
+        
+        if isinstance(self.config, PiecewiseBatchSizeConfig):
+            return self._get_piecewise_batch_size(epoch)
+        else:
+            return self._get_step_batch_size(epoch)
+    
+    def _get_step_batch_size(self, epoch: int) -> int:
+        """Step-based: batch_size = initial * gamma^(epoch // step_size)"""
         num_steps = epoch // self.config.step_size
         new_batch_size = self.initial_batch_size * (self.config.gamma ** num_steps)
         
@@ -284,6 +304,19 @@ class BatchSizeScheduler:
             new_batch_size = min(new_batch_size, self.config.max_batch_size)
             
         return int(new_batch_size)
+    
+    def _get_piecewise_batch_size(self, epoch: int) -> int:
+        """Piecewise: look up the last milestone at or before the current epoch."""
+        milestones = self.config.milestones  # Already sorted by epoch from validator
+        batch_size = self.initial_batch_size
+        
+        for milestone_epoch, milestone_bs in milestones:
+            if milestone_epoch <= epoch:
+                batch_size = milestone_bs
+            else:
+                break
+                
+        return int(batch_size)
     
     def step(self, epoch: int) -> Tuple[int, bool]:
         """Update epoch and return batch size and whether DataLoader needs recreation.

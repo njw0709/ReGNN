@@ -153,6 +153,18 @@ def train(
             training_hp.batch_size
         )
 
+    # Setup regression gradient accumulation
+    reg_accum_steps = training_hp.regression_gradient_accumulation_steps
+    use_reg_accum = reg_accum_steps > 1
+    if use_reg_accum:
+        # Initialize accumulator for regression (MMR) parameter gradients
+        reg_grad_accum = {id(p): torch.zeros_like(p, device=training_hp.device) for p in model.mmr_parameters}
+        reg_accum_count = 0
+        print(
+            f"Regression gradient accumulation enabled: "
+            f"regression params update every {reg_accum_steps} steps"
+        )
+
     # Training Loop - Refactored for new ProbeManager
     global_iteration_counter = 0
     training_should_continue = True
@@ -258,6 +270,31 @@ def train(
                 total_batch_loss = total_batch_loss.mean()
 
             total_batch_loss.backward()
+
+            # Regression gradient accumulation: accumulate regression gradients
+            # over multiple steps while NN params update every step.
+            if use_reg_accum:
+                for p in model.mmr_parameters:
+                    if p.grad is not None:
+                        reg_grad_accum[id(p)] += p.grad.clone()
+                reg_accum_count += 1
+
+                if reg_accum_count < reg_accum_steps:
+                    # Not ready to update regression yet -- zero their grads
+                    # so optimizer.step() only updates NN params
+                    for p in model.mmr_parameters:
+                        if p.grad is not None:
+                            p.grad.zero_()
+                else:
+                    # Ready to update regression -- replace grads with averaged accumulation
+                    for p in model.mmr_parameters:
+                        if p.grad is not None:
+                            p.grad.copy_(reg_grad_accum[id(p)] / reg_accum_count)
+                    # Reset accumulator
+                    for key in reg_grad_accum:
+                        reg_grad_accum[key].zero_()
+                    reg_accum_count = 0
+
             if gradient_balance > 0:
                 balance_gradients_for_regnn(model, desired_ratio=gradient_balance)
             optimizer.step()
@@ -291,6 +328,21 @@ def train(
                     break
             if not training_should_continue:
                 break  # Break from batch loop
+        # Flush any remaining accumulated regression gradients at end of epoch
+        if use_reg_accum and reg_accum_count > 0:
+            # Apply partial accumulation so regression params don't miss end-of-epoch data
+            optimizer.zero_grad()
+            # We need a dummy backward to populate NN grads (they'll be zero).
+            # Just directly set regression grads from accumulator.
+            for p in model.mmr_parameters:
+                if reg_grad_accum[id(p)] is not None:
+                    p.grad = (reg_grad_accum[id(p)] / reg_accum_count).clone()
+            optimizer.step()
+            # Reset accumulator for next epoch
+            for key in reg_grad_accum:
+                reg_grad_accum[key].zero_()
+            reg_accum_count = 0
+
         if not training_should_continue:
             break  # Break from epoch loop
 

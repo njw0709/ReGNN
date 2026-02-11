@@ -1,5 +1,5 @@
-from typing import Optional, Literal, Union
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from typing import Optional, Literal, Union, List, Tuple, Annotated
+from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 import torch
 
 
@@ -222,6 +222,56 @@ class StepBatchSizeConfig(BaseModel):
     )
 
 
+class PiecewiseBatchSizeConfig(BaseModel):
+    """Configuration for piecewise batch size scheduling.
+
+    Allows specifying arbitrary batch sizes at specific epoch milestones.
+    Useful for warm-start strategies (e.g., start with large batch for stable
+    regression coefficients, then switch to smaller batch for better NN generalization).
+
+    Example:
+        milestones=[(0, 2048), (50, 256)] means:
+        - Epochs 0-49: batch_size = 2048
+        - Epochs 50+: batch_size = 256
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+    type: Literal["piecewise"] = "piecewise"
+    milestones: List[Tuple[int, int]] = Field(
+        ...,
+        description=(
+            "List of (epoch, batch_size) tuples defining the batch size schedule. "
+            "Must be sorted by epoch. At each epoch, the batch size from the last "
+            "milestone at or before that epoch is used."
+        ),
+    )
+
+    @field_validator("milestones")
+    @classmethod
+    def validate_milestones(cls, v: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        if len(v) < 1:
+            raise ValueError("milestones must contain at least one entry")
+        # Sort by epoch
+        v = sorted(v, key=lambda x: x[0])
+        # Validate epochs are non-negative and batch sizes are positive
+        for epoch, batch_size in v:
+            if epoch < 0:
+                raise ValueError(f"Milestone epoch must be >= 0, got {epoch}")
+            if batch_size < 1:
+                raise ValueError(f"Milestone batch_size must be >= 1, got {batch_size}")
+        # Check for duplicate epochs
+        epochs = [e for e, _ in v]
+        if len(epochs) != len(set(epochs)):
+            raise ValueError("Duplicate epochs in milestones are not allowed")
+        return v
+
+
+BatchSizeSchedulerConfigUnion = Annotated[
+    Union[StepBatchSizeConfig, PiecewiseBatchSizeConfig],
+    Field(discriminator="type"),
+]
+
+
 class OptimizerConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=False)
 
@@ -298,8 +348,19 @@ class TrainingHyperParams(BaseModel):
 
     epochs: int = Field(100, gt=0, description="Number of training epochs")
     batch_size: int = Field(32, gt=0, description="Initial training batch size")
-    batch_size_scheduler: Optional[StepBatchSizeConfig] = Field(
-        None, description="Batch size scheduler configuration"
+    batch_size_scheduler: Optional[BatchSizeSchedulerConfigUnion] = Field(
+        None, description="Batch size scheduler configuration (step-based or piecewise)"
+    )
+    regression_gradient_accumulation_steps: int = Field(
+        1,
+        ge=1,
+        description=(
+            "Number of mini-batches over which to accumulate gradients for regression "
+            "(MMR) parameters before applying an update. NN parameters are updated every "
+            "step regardless. Values > 1 give regression params effectively larger-batch "
+            "gradient estimates, improving coefficient stability without sacrificing NN "
+            "generalization from small batches."
+        ),
     )
     optimizer_config: OptimizerConfig = Field(
         default_factory=OptimizerConfig,

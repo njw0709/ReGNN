@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset
 from regnn.train import (
     StepBatchSizeConfig,
+    PiecewiseBatchSizeConfig,
     TrainingHyperParams,
 )
 from regnn.macroutils.utils import BatchSizeScheduler
@@ -278,3 +279,192 @@ class TestBatchSizeGrowthPatterns:
         assert scheduler.get_batch_size(10) == 512  # Capped
         assert scheduler.get_batch_size(15) == 512  # Still capped
         assert scheduler.get_batch_size(100) == 512  # Always capped
+
+
+class TestPiecewiseBatchSizeConfig:
+    """Test suite for PiecewiseBatchSizeConfig validation."""
+
+    def test_valid_config(self):
+        """Test valid piecewise configuration."""
+        config = PiecewiseBatchSizeConfig(milestones=[(0, 2048), (50, 256)])
+        assert config.type == "piecewise"
+        assert config.milestones == [(0, 2048), (50, 256)]
+
+    def test_auto_sorts_milestones(self):
+        """Test that milestones are auto-sorted by epoch."""
+        config = PiecewiseBatchSizeConfig(milestones=[(50, 256), (0, 2048)])
+        assert config.milestones == [(0, 2048), (50, 256)]
+
+    def test_single_milestone(self):
+        """Test with a single milestone."""
+        config = PiecewiseBatchSizeConfig(milestones=[(10, 512)])
+        assert config.milestones == [(10, 512)]
+
+    def test_empty_milestones_raises(self):
+        """Test that empty milestones list raises validation error."""
+        with pytest.raises(Exception):
+            PiecewiseBatchSizeConfig(milestones=[])
+
+    def test_negative_epoch_raises(self):
+        """Test that negative epoch in milestone raises validation error."""
+        with pytest.raises(Exception):
+            PiecewiseBatchSizeConfig(milestones=[(-1, 256)])
+
+    def test_zero_batch_size_raises(self):
+        """Test that zero batch size in milestone raises validation error."""
+        with pytest.raises(Exception):
+            PiecewiseBatchSizeConfig(milestones=[(0, 0)])
+
+    def test_duplicate_epochs_raises(self):
+        """Test that duplicate epochs in milestones raises validation error."""
+        with pytest.raises(Exception):
+            PiecewiseBatchSizeConfig(milestones=[(0, 256), (0, 512)])
+
+
+class TestPiecewiseBatchSizeScheduler:
+    """Test suite for BatchSizeScheduler with PiecewiseBatchSizeConfig."""
+
+    def test_warm_start_then_reduce(self):
+        """Test warm-start strategy: large batch then small batch."""
+        config = PiecewiseBatchSizeConfig(milestones=[(0, 2048), (50, 256)])
+        scheduler = BatchSizeScheduler(config, initial_batch_size=32)
+
+        # Epochs 0-49: batch_size = 2048 (from first milestone)
+        assert scheduler.get_batch_size(0) == 2048
+        assert scheduler.get_batch_size(25) == 2048
+        assert scheduler.get_batch_size(49) == 2048
+
+        # Epochs 50+: batch_size = 256 (from second milestone)
+        assert scheduler.get_batch_size(50) == 256
+        assert scheduler.get_batch_size(100) == 256
+
+    def test_initial_batch_size_used_before_first_milestone(self):
+        """Test that initial_batch_size is used before the first milestone epoch."""
+        config = PiecewiseBatchSizeConfig(milestones=[(20, 1024), (50, 256)])
+        scheduler = BatchSizeScheduler(config, initial_batch_size=128)
+
+        # Epochs 0-19: uses initial_batch_size since no milestone covers epoch 0
+        assert scheduler.get_batch_size(0) == 128
+        assert scheduler.get_batch_size(10) == 128
+        assert scheduler.get_batch_size(19) == 128
+
+        # Epochs 20-49: batch_size = 1024
+        assert scheduler.get_batch_size(20) == 1024
+        assert scheduler.get_batch_size(49) == 1024
+
+        # Epochs 50+: batch_size = 256
+        assert scheduler.get_batch_size(50) == 256
+
+    def test_three_phase_schedule(self):
+        """Test a three-phase schedule: large -> medium -> small."""
+        config = PiecewiseBatchSizeConfig(
+            milestones=[(0, 2048), (30, 512), (60, 128)]
+        )
+        scheduler = BatchSizeScheduler(config, initial_batch_size=32)
+
+        assert scheduler.get_batch_size(0) == 2048
+        assert scheduler.get_batch_size(29) == 2048
+        assert scheduler.get_batch_size(30) == 512
+        assert scheduler.get_batch_size(59) == 512
+        assert scheduler.get_batch_size(60) == 128
+        assert scheduler.get_batch_size(100) == 128
+
+    def test_step_method_triggers_recreation(self):
+        """Test that step() correctly signals DataLoader recreation."""
+        config = PiecewiseBatchSizeConfig(milestones=[(0, 2048), (50, 256)])
+        scheduler = BatchSizeScheduler(config, initial_batch_size=32)
+
+        # Epoch 0: initial batch size is 2048 (from milestone), no change needed
+        bs, should_recreate = scheduler.step(0)
+        assert bs == 2048
+        assert should_recreate == False
+
+        # Epochs 1-49: no change
+        for epoch in range(1, 50):
+            bs, should_recreate = scheduler.step(epoch)
+            assert bs == 2048
+            assert should_recreate == False
+
+        # Epoch 50: change to 256
+        bs, should_recreate = scheduler.step(50)
+        assert bs == 256
+        assert should_recreate == True
+
+        # Epoch 51: no change
+        bs, should_recreate = scheduler.step(51)
+        assert bs == 256
+        assert should_recreate == False
+
+    def test_should_update_method(self):
+        """Test should_update method for piecewise schedule."""
+        config = PiecewiseBatchSizeConfig(milestones=[(0, 2048), (50, 256)])
+        scheduler = BatchSizeScheduler(config, initial_batch_size=32)
+
+        assert scheduler.should_update(0) == False
+        assert scheduler.should_update(49) == False
+        assert scheduler.should_update(50) == True
+        assert scheduler.should_update(51) == False
+
+    def test_current_batch_size_initialized_from_milestone(self):
+        """Test that current_batch_size is set from epoch-0 milestone, not initial_batch_size."""
+        config = PiecewiseBatchSizeConfig(milestones=[(0, 2048), (50, 256)])
+        scheduler = BatchSizeScheduler(config, initial_batch_size=32)
+
+        # current_batch_size should be 2048 (from milestone), not 32
+        assert scheduler.current_batch_size == 2048
+
+    def test_current_batch_size_uses_initial_when_no_epoch_zero_milestone(self):
+        """Test that current_batch_size uses initial_batch_size when no epoch-0 milestone."""
+        config = PiecewiseBatchSizeConfig(milestones=[(20, 1024)])
+        scheduler = BatchSizeScheduler(config, initial_batch_size=128)
+
+        assert scheduler.current_batch_size == 128
+
+
+class TestTrainingHyperParamsWithPiecewise:
+    """Test TrainingHyperParams integration with piecewise batch scheduler."""
+
+    def test_piecewise_batch_scheduler(self):
+        """Test that TrainingHyperParams accepts PiecewiseBatchSizeConfig."""
+        config = PiecewiseBatchSizeConfig(milestones=[(0, 2048), (50, 256)])
+        training_hp = TrainingHyperParams(
+            epochs=100,
+            batch_size=256,
+            batch_size_scheduler=config,
+        )
+        assert training_hp.batch_size_scheduler is not None
+        assert training_hp.batch_size_scheduler.type == "piecewise"
+
+    def test_step_batch_scheduler_still_works(self):
+        """Test that StepBatchSizeConfig still works (backward compat)."""
+        config = StepBatchSizeConfig(step_size=20, gamma=2, max_batch_size=2048)
+        training_hp = TrainingHyperParams(
+            epochs=100,
+            batch_size=256,
+            batch_size_scheduler=config,
+        )
+        assert training_hp.batch_size_scheduler is not None
+        assert training_hp.batch_size_scheduler.type == "step"
+
+    def test_regression_gradient_accumulation_default(self):
+        """Test that regression_gradient_accumulation_steps defaults to 1."""
+        training_hp = TrainingHyperParams(epochs=10, batch_size=32)
+        assert training_hp.regression_gradient_accumulation_steps == 1
+
+    def test_regression_gradient_accumulation_custom(self):
+        """Test setting custom regression_gradient_accumulation_steps."""
+        training_hp = TrainingHyperParams(
+            epochs=10,
+            batch_size=32,
+            regression_gradient_accumulation_steps=8,
+        )
+        assert training_hp.regression_gradient_accumulation_steps == 8
+
+    def test_regression_gradient_accumulation_validation(self):
+        """Test that regression_gradient_accumulation_steps must be >= 1."""
+        with pytest.raises(Exception):
+            TrainingHyperParams(
+                epochs=10,
+                batch_size=32,
+                regression_gradient_accumulation_steps=0,
+            )
