@@ -813,6 +813,7 @@ class ReGNN(nn.Module):
             batch_norm=config.nn_config.batch_norm,
             vae=config.nn_config.vae,
             output_mu_var=config.nn_config.output_mu_var,
+            interaction_direction=config.interaction_direction,
             n_ensemble=config.nn_config.n_ensemble,
             use_closed_form_linear_weights=config.use_closed_form_linear_weights,
             use_resmlp=config.nn_config.use_resmlp,
@@ -833,7 +834,7 @@ class ReGNN(nn.Module):
         batch_norm: bool = True,
         vae: bool = True,
         output_mu_var: bool = True,
-        # interaction_direction: str = "positive",
+        interaction_direction: str = "positive",
         n_ensemble: int = 1,
         use_closed_form_linear_weights: bool = False,
         use_resmlp: bool = False,
@@ -867,12 +868,16 @@ class ReGNN(nn.Module):
         # Only create controlled_var_weights if we have controlled variables
         self.has_linear_terms = num_linear > 0
 
+        # Create interaction coefficient parameter (always created for consistency)
+        self.interaction_coefficient = nn.Parameter(torch.ones(1, 1))
+        
         if not self.use_closed_form_linear_weights:
             self.focal_predictor_main_weight = nn.Parameter(torch.randn(1, 1))
             # self.predicted_index_weight = nn.Parameter(torch.randn(1, self.num_models))
             self.intercept = nn.Parameter(torch.randn(1, 1))
             self.mmr_parameters = [
                 self.focal_predictor_main_weight,
+                self.interaction_coefficient,
                 # self.predicted_index_weight,
                 self.intercept,
             ]
@@ -882,7 +887,8 @@ class ReGNN(nn.Module):
                     [param for param in self.linear_weights.parameters()]
                 )
         else:
-            self.mmr_parameters = []
+            # In closed-form mode, only interaction_coefficient is learned
+            self.mmr_parameters = [self.interaction_coefficient]
 
         self.dropout_rate = dropout
         self.index_prediction_model = IndexPredictionModel(
@@ -907,13 +913,17 @@ class ReGNN(nn.Module):
 
         if include_bias_focal_predictor:
             self.xf_bias = nn.Parameter(torch.randn(1, 1))
-        # self.interaction_direction = interaction_direction
+        self.interaction_direction = interaction_direction
         self.initialize_weights()
 
     def initialize_weights(self):
         for module in self.modules():
             if isinstance(module, nn.Linear):
                 init.kaiming_normal_(module.weight)
+        
+        # Initialize interaction coefficient to 1.0
+        if hasattr(self, 'interaction_coefficient'):
+            init.ones_(self.interaction_coefficient)
 
     def _get_linear_term_variables(self, moderators, focal_predictor, controlled_vars):
         # Keep all tensors in 2D format (batch_size, features)
@@ -1021,8 +1031,13 @@ class ReGNN(nn.Module):
                 predicted_interaction_term = predicted_index
             predicted_interaction_term = predicted_interaction_term * focal_predictor
 
-            # if self.interaction_direction != "positive":
-            #     predicted_interaction_term = -1.0 * predicted_interaction_term
+            # Apply interaction coefficient with direction constraint
+            if self.interaction_direction == "positive":
+                interaction_coef = torch.abs(self.interaction_coefficient)
+            else:  # negative
+                interaction_coef = -torch.abs(self.interaction_coefficient)
+            
+            predicted_interaction_term = interaction_coef * predicted_interaction_term
 
             # Only compute controlled term if we have controlled variables
             linear_terms = (
@@ -1041,13 +1056,20 @@ class ReGNN(nn.Module):
             )
 
         else:
-            # Compute interaction term with coefficient fixed to 1
+            # Compute interaction term with learnable coefficient and sign constraint
             # Calculate interaction term based on number of models
             if predicted_index.shape[1] > 1:
                 predicted_interaction_term = predicted_index.sum(dim=1, keepdim=True)
             else:
                 predicted_interaction_term = predicted_index
-            interaction_term = predicted_interaction_term * focal_predictor  # shape: [batch, 1]
+            
+            # Apply interaction coefficient with direction constraint
+            if self.interaction_direction == "positive":
+                interaction_coef = torch.abs(self.interaction_coefficient)
+            else:  # negative
+                interaction_coef = -torch.abs(self.interaction_coefficient)
+            
+            interaction_term = interaction_coef * predicted_interaction_term * focal_predictor  # shape: [batch, 1]
             
             # Build design matrix with only linear predictors (excluding interaction)
             # all_linear_vars already includes focal_predictor main effect
@@ -1057,7 +1079,7 @@ class ReGNN(nn.Module):
             ones = torch.ones(X_linear.size(0), 1, device=X_linear.device)
             X_linear = torch.cat([ones, X_linear], dim=1)  # shape: [batch, n_linear_terms + 1]
 
-            # Adjust target by subtracting interaction term (with coefficient 1)
+            # Adjust target by subtracting interaction term (already scaled by coefficient)
             y_adjusted = y.clone()
             
             # Apply weights if provided
@@ -1098,7 +1120,7 @@ class ReGNN(nn.Module):
                     )
                     weights = (Vh.t() * S_inv.unsqueeze(-1)) @ (U.t() @ y_adjusted)
 
-            # Predict outcome: linear terms + interaction term (with coefficient 1)
+            # Predict outcome: linear terms + interaction term (already scaled by coefficient)
             outcome = (X_linear @ weights).view(-1, 1) + interaction_term
 
         if self.vae:
