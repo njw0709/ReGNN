@@ -80,6 +80,9 @@ class ProbeManager:
         collected_probe_data_for_this_call: List[ProbeData] = []
         active_datasets = datasets if datasets is not None else {}
         active_dataloaders = dataloaders if dataloaders is not None else {}
+        
+        # Make current measurements available to probes (e.g., early stopping can access current epoch's regression eval)
+        self.shared_resources["current_measurements"] = collected_probe_data_for_this_call
 
         for schedule in self.schedules:
             if schedule.frequency_type != frequency_context:

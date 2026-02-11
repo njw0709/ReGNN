@@ -284,7 +284,8 @@ def train(
             for res in iteration_probes_results:
                 if isinstance(res, EarlyStoppingSignalProbeResult) and res.should_stop:
                     print(
-                        f"Early stopping triggered at ITERATION level: Epoch {epoch}, Iteration {batch_idx}. Reason: {res.reason or res.message}"
+                        f"Early stopping triggered at iteration level: Epoch {epoch} (1-indexed: epoch {epoch + 1}), "
+                        f"Iteration {batch_idx}. Training will stop. Reason: {res.reason or res.message}"
                     )
                     training_should_continue = False
                     break
@@ -330,10 +331,11 @@ def train(
         for res in epoch_probes_results:
             if isinstance(res, EarlyStoppingSignalProbeResult) and res.should_stop:
                 print(
-                    f"Early stopping signaled at EPOCH level: Epoch {epoch}. Reason: {res.reason or res.message}"
+                    f"Early stopping signaled after epoch {epoch} (1-indexed: epoch {epoch + 1}). "
+                    f"Training will stop before the next epoch. Reason: {res.reason or res.message}"
                 )
                 training_should_continue = (
-                    False  # Signal to stop training after this epoch's processing
+                    False  # Signal to stop training before the next epoch starts
                 )
                 break  # Stop checking other probe results for this epoch
         # The loop will break at the start of the next epoch if training_should_continue is False

@@ -113,13 +113,13 @@ def pval_early_stopping_probe(
 
     # Process epoch-based snapshots first
     snapshots: List[Snapshot] = []
-    for epoch, snapshots in epoch_snapshots.items():
+    for snapshot_epoch, snapshots in epoch_snapshots.items():
         for snapshot in snapshots:
-            process_snapshot_measurements(snapshot, epoch)
+            process_snapshot_measurements(snapshot, snapshot_epoch)
 
     # Process iteration-based snapshots (take last iteration per epoch)
     # Only for epochs that don't already have epoch-based measurements
-    for epoch, snapshots in iteration_snapshots.items():
+    for snapshot_epoch, snapshots in iteration_snapshots.items():
         # get last snapshot
         largest_iteration = -1
         last_snapshot: Union[None, Snapshot] = None
@@ -132,7 +132,7 @@ def pval_early_stopping_probe(
                     last_snapshot = snapshot
                     largest_iteration = snapshot.iteration_in_epoch
         if last_snapshot is not None:
-            process_snapshot_measurements(last_snapshot, epoch)
+            process_snapshot_measurements(last_snapshot, snapshot_epoch)
 
     # Identify joint evaluation epochs where ALL monitored sources have p-values and epoch >= patience
     all_epochs_with_any_data = sorted(
@@ -160,6 +160,42 @@ def pval_early_stopping_probe(
             reason="No suitable historical evaluation data to check.",
         )
 
+    # Check if current epoch's data is available in the current probe execution
+    # (it might be in shared resources as "current_measurements" if probes are running in order)
+    current_measurements = shared_resource_accessor("current_measurements")
+    current_epoch_pvalues = {}
+    if current_measurements:
+        for measurement in current_measurements:
+            if isinstance(measurement, OLSModeratedResultsProbe):
+                try:
+                    measurement_ds_enum = DataSource(measurement.data_source)
+                    if measurement_ds_enum in schedule_config.data_sources_to_monitor:
+                        if measurement.interaction_pval is not None:
+                            current_epoch_pvalues[measurement_ds_enum] = measurement.interaction_pval
+                except ValueError:
+                    continue
+    
+    # Add current epoch's p-values to the history if available for all monitored sources
+    # Convert monitored sources to DataSource enums for comparison
+    monitored_enums = []
+    for ds in schedule_config.data_sources_to_monitor:
+        if isinstance(ds, str):
+            monitored_enums.append(DataSource(ds))
+        elif isinstance(ds, DataSource):
+            monitored_enums.append(ds)
+        else:
+            monitored_enums.append(ds)  # Keep as is
+    
+    
+    if current_epoch_pvalues and all(ds_enum in current_epoch_pvalues for ds_enum in monitored_enums):
+        for ds_enum in monitored_enums:
+            if epoch not in p_values_history[ds_enum]:
+                p_values_history[ds_enum][epoch] = current_epoch_pvalues[ds_enum]
+        # Add current epoch to joint_evaluation_epochs if it meets criteria
+        if epoch >= schedule_config.patience and epoch not in joint_evaluation_epochs:
+            joint_evaluation_epochs.append(epoch)
+            joint_evaluation_epochs.sort()
+    
     if len(joint_evaluation_epochs) < schedule_config.n_sequential_evals_to_pass:
         return EarlyStoppingSignalProbeResult(
             probe_type_name="pval_early_stopping",
