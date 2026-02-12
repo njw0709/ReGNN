@@ -351,15 +351,17 @@ class TrainingHyperParams(BaseModel):
     batch_size_scheduler: Optional[BatchSizeSchedulerConfigUnion] = Field(
         None, description="Batch size scheduler configuration (step-based or piecewise)"
     )
-    regression_gradient_accumulation_steps: int = Field(
+    regression_gradient_accumulation_samples: int = Field(
         1,
         ge=1,
         description=(
-            "Number of mini-batches over which to accumulate gradients for regression "
-            "(MMR) parameters before applying an update. NN parameters are updated every "
-            "step regardless. Values > 1 give regression params effectively larger-batch "
-            "gradient estimates, improving coefficient stability without sacrificing NN "
-            "generalization from small batches."
+            "Number of samples over which to accumulate gradients for regression (MMR) "
+            "parameters before applying an update. NN parameters are updated every step "
+            "regardless. When the accumulated sample count reaches this target, regression "
+            "params are updated with the averaged gradient. This is batch-size-invariant: "
+            "if the batch size changes (e.g. via batch_size_scheduler), the same amount of "
+            "data is seen before each regression update. Set to 1 (default) to update "
+            "every batch."
         ),
     )
     optimizer_config: OptimizerConfig = Field(

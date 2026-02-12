@@ -88,8 +88,8 @@ def train(
     else:
         model.to(torch.device(training_hp.device))
 
-    loss_func_train, regularization_train, optimizer, scheduler = setup_loss_and_optimizer(
-        model, training_hp
+    loss_func_train, regularization_train, optimizer, scheduler = (
+        setup_loss_and_optimizer(model, training_hp)
     )
 
     # 4. DataLoader
@@ -97,6 +97,7 @@ def train(
         train_dataset,
         batch_size=training_hp.batch_size,
         shuffle=training_hp.shuffle,
+        drop_last=True,
     )
 
     test_dataloader: Optional[TorchDataLoader] = None
@@ -139,30 +140,34 @@ def train(
         and regnn_model_cfg.nn_config.use_soft_tree
     ):
         from regnn.macroutils.utils import TemperatureAnnealer
+
         temperature_annealer = TemperatureAnnealer(
-            training_hp.optimizer_config.temperature_annealing,
-            training_hp.epochs
+            training_hp.optimizer_config.temperature_annealing, training_hp.epochs
         )
 
     # Initialize batch size scheduler if configured
     batch_size_scheduler = None
     if training_hp.batch_size_scheduler is not None:
         from regnn.macroutils.utils import BatchSizeScheduler
+
         batch_size_scheduler = BatchSizeScheduler(
-            training_hp.batch_size_scheduler,
-            training_hp.batch_size
+            training_hp.batch_size_scheduler, training_hp.batch_size
         )
 
-    # Setup regression gradient accumulation
-    reg_accum_steps = training_hp.regression_gradient_accumulation_steps
-    use_reg_accum = reg_accum_steps > 1
+    # Setup regression gradient accumulation (sample-based)
+    reg_accum_target = training_hp.regression_gradient_accumulation_samples
+    use_reg_accum = reg_accum_target > 1
     if use_reg_accum:
         # Initialize accumulator for regression (MMR) parameter gradients
-        reg_grad_accum = {id(p): torch.zeros_like(p, device=training_hp.device) for p in model.mmr_parameters}
-        reg_accum_count = 0
+        reg_grad_accum = {
+            id(p): torch.zeros_like(p, device=training_hp.device)
+            for p in model.mmr_parameters
+        }
+        reg_accum_samples_count = 0  # tracks accumulated samples
+        reg_accum_batch_count = 0  # tracks accumulated batches (for gradient averaging)
         print(
             f"Regression gradient accumulation enabled: "
-            f"regression params update every {reg_accum_steps} steps"
+            f"regression params update every {reg_accum_target} samples"
         )
 
     # Training Loop - Refactored for new ProbeManager
@@ -177,11 +182,14 @@ def train(
         if batch_size_scheduler:
             new_batch_size, should_recreate = batch_size_scheduler.step(epoch)
             if should_recreate:
-                print(f"Epoch {epoch}: Updating batch size from {train_dataloader.batch_size} to {new_batch_size}")
+                print(
+                    f"Epoch {epoch}: Updating batch size from {train_dataloader.batch_size} to {new_batch_size}"
+                )
                 train_dataloader = TorchDataLoader(
                     train_dataset,
                     batch_size=new_batch_size,
                     shuffle=training_hp.shuffle,
+                    drop_last=True,
                 )
                 dataloaders_map[DataSource.TRAIN] = train_dataloader
 
@@ -222,17 +230,19 @@ def train(
                 training_hp.loss_options, KLDLossConfig
             ):
                 outcome, mu, log_var = predictions
-                batch_loss_main = loss_func_train(
-                    targets, outcome, mu, log_var
-                )
+                batch_loss_main = loss_func_train(targets, outcome, mu, log_var)
             elif isinstance(training_hp.loss_options, TreeLossConfig):
                 # Tree routing regularization requires moderators and model
-                moderators = batch_data['moderators']
-                batch_loss_main = loss_func_train(predictions, targets, moderators, model)
+                moderators = batch_data["moderators"]
+                batch_loss_main = loss_func_train(
+                    predictions, targets, moderators, model
+                )
             elif isinstance(training_hp.loss_options, PriorPenaltyLossConfig):
                 # Prior penalty requires moderators and model
-                moderators = batch_data['moderators']
-                batch_loss_main = loss_func_train(predictions, targets, moderators, model)
+                moderators = batch_data["moderators"]
+                batch_loss_main = loss_func_train(
+                    predictions, targets, moderators, model
+                )
             else:
                 batch_loss_main = loss_func_train(predictions, targets)
 
@@ -271,15 +281,18 @@ def train(
 
             total_batch_loss.backward()
 
-            # Regression gradient accumulation: accumulate regression gradients
-            # over multiple steps while NN params update every step.
+            # Regression gradient accumulation (sample-based): accumulate
+            # regression gradients until enough samples have been seen, while
+            # NN params update every step.
             if use_reg_accum:
                 for p in model.mmr_parameters:
                     if p.grad is not None:
                         reg_grad_accum[id(p)] += p.grad.clone()
-                reg_accum_count += 1
+                current_batch_size = targets.shape[0]
+                reg_accum_samples_count += current_batch_size
+                reg_accum_batch_count += 1
 
-                if reg_accum_count < reg_accum_steps:
+                if reg_accum_samples_count < reg_accum_target:
                     # Not ready to update regression yet -- zero their grads
                     # so optimizer.step() only updates NN params
                     for p in model.mmr_parameters:
@@ -289,11 +302,12 @@ def train(
                     # Ready to update regression -- replace grads with averaged accumulation
                     for p in model.mmr_parameters:
                         if p.grad is not None:
-                            p.grad.copy_(reg_grad_accum[id(p)] / reg_accum_count)
-                    # Reset accumulator
+                            p.grad.copy_(reg_grad_accum[id(p)] / reg_accum_batch_count)
+                    # Reset accumulators
                     for key in reg_grad_accum:
                         reg_grad_accum[key].zero_()
-                    reg_accum_count = 0
+                    reg_accum_samples_count = 0
+                    reg_accum_batch_count = 0
 
             if gradient_balance > 0:
                 balance_gradients_for_regnn(model, desired_ratio=gradient_balance)
@@ -329,19 +343,20 @@ def train(
             if not training_should_continue:
                 break  # Break from batch loop
         # Flush any remaining accumulated regression gradients at end of epoch
-        if use_reg_accum and reg_accum_count > 0:
+        if use_reg_accum and reg_accum_batch_count > 0:
             # Apply partial accumulation so regression params don't miss end-of-epoch data
             optimizer.zero_grad()
             # We need a dummy backward to populate NN grads (they'll be zero).
             # Just directly set regression grads from accumulator.
             for p in model.mmr_parameters:
                 if reg_grad_accum[id(p)] is not None:
-                    p.grad = (reg_grad_accum[id(p)] / reg_accum_count).clone()
+                    p.grad = (reg_grad_accum[id(p)] / reg_accum_batch_count).clone()
             optimizer.step()
-            # Reset accumulator for next epoch
+            # Reset accumulators for next epoch
             for key in reg_grad_accum:
                 reg_grad_accum[key].zero_()
-            reg_accum_count = 0
+            reg_accum_samples_count = 0
+            reg_accum_batch_count = 0
 
         if not training_should_continue:
             break  # Break from epoch loop
@@ -399,14 +414,13 @@ def train(
         # Update learning rate scheduler
         if scheduler:
             from regnn.macroutils.utils import PerGroupScheduler
-            
+
             # Check if this is a per-group scheduler or standard scheduler
             is_per_group = isinstance(scheduler, PerGroupScheduler)
             is_reduce_on_plateau = (
-                (is_per_group and scheduler.is_reduce_on_plateau) or
-                isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau)
-            )
-            
+                is_per_group and scheduler.is_reduce_on_plateau
+            ) or isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau)
+
             if is_reduce_on_plateau:
                 # ReduceLROnPlateau needs a metric to monitor
                 # Try to use test loss if available, otherwise use train loss
@@ -414,6 +428,7 @@ def train(
                 # Check if test objective was computed in epoch probes
                 for res in epoch_probes_results:
                     from regnn.probe import ObjectiveProbe
+
                     if isinstance(res, ObjectiveProbe) and res.data_source == "test":
                         metric_value = res.objective
                         break

@@ -447,24 +447,24 @@ class TestTrainingHyperParamsWithPiecewise:
         assert training_hp.batch_size_scheduler.type == "step"
 
     def test_regression_gradient_accumulation_default(self):
-        """Test that regression_gradient_accumulation_steps defaults to 1."""
+        """Test that regression_gradient_accumulation_samples defaults to 1."""
         training_hp = TrainingHyperParams(epochs=10, batch_size=32)
-        assert training_hp.regression_gradient_accumulation_steps == 1
+        assert training_hp.regression_gradient_accumulation_samples == 1
 
     def test_regression_gradient_accumulation_custom(self):
-        """Test setting custom regression_gradient_accumulation_steps."""
+        """Test setting custom regression_gradient_accumulation_samples."""
         training_hp = TrainingHyperParams(
             epochs=10,
             batch_size=32,
-            regression_gradient_accumulation_steps=8,
+            regression_gradient_accumulation_samples=256,
         )
-        assert training_hp.regression_gradient_accumulation_steps == 8
+        assert training_hp.regression_gradient_accumulation_samples == 256
 
     def test_regression_gradient_accumulation_validation(self):
-        """Test that regression_gradient_accumulation_steps must be >= 1."""
+        """Test that regression_gradient_accumulation_samples must be >= 1."""
         with pytest.raises(Exception):
             TrainingHyperParams(
                 epochs=10,
                 batch_size=32,
-                regression_gradient_accumulation_steps=0,
+                regression_gradient_accumulation_samples=0,
             )
