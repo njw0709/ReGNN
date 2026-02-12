@@ -239,6 +239,32 @@ class PValEarlyStoppingProbeScheduleConfig(ProbeScheduleConfig):
         description="Data sources (e.g., TRAIN, TEST) whose p-values to monitor from RegressionEvalProbe results.",
     )
 
+    # "Save on best" fields
+    save_on_best: bool = Field(
+        False,
+        description="If True, save checkpoint and intermediate index when best test pval is found after patience.",
+    )
+    save_on_best_data_sources: List[DataSource] = Field(
+        default_factory=lambda: [DataSource.TEST],
+        description="Data sources on which to run SaveIntermediateIndexProbe when best pval is found.",
+    )
+    save_on_best_save_dir: str = Field(
+        "checkpoints",
+        description="Directory for best checkpoint and index saves.",
+    )
+    save_on_best_model_save_name: str = Field(
+        "model",
+        description="Base name for saved files.",
+    )
+    save_on_best_index_column_name: Optional[str] = Field(
+        None,
+        description="Column name for index in intermediate index save.",
+    )
+    save_on_best_file_id: Optional[str] = Field(
+        None,
+        description="Optional file ID suffix.",
+    )
+
 
 # Union type for all specific probe schedule configurations
 AllProbeScheduleConfigs = Union[

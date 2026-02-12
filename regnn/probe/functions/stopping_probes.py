@@ -1,3 +1,4 @@
+import os
 from typing import Optional, List, Union, Callable, Any, Dict
 
 from regnn.probe.registry import register_probe, PROBE_REGISTRY
@@ -15,6 +16,100 @@ from regnn.probe.dataclass.trajectory import (
 from regnn.probe.dataclass.regression import (
     OLSModeratedResultsProbe,
 )  # To check p-values
+
+
+def _save_best_checkpoint(model, schedule_config: PValEarlyStoppingProbeScheduleConfig):
+    """Save a model checkpoint with 'best' suffix, overwriting any previous best."""
+    from regnn.probe.functions.checkpoint_probes import save_model
+
+    save_dir = schedule_config.save_on_best_save_dir
+    base_name = schedule_config.save_on_best_model_save_name
+    file_id_suffix = (
+        f"-{schedule_config.save_on_best_file_id}"
+        if schedule_config.save_on_best_file_id
+        else ""
+    )
+    data_id = f"{base_name}{file_id_suffix}_best"
+
+    try:
+        saved_path = save_model(
+            model=model, model_type="regnn", save_dir=save_dir, data_id=data_id
+        )
+        print(f"  Best checkpoint saved: {saved_path}")
+    except Exception as e:
+        import traceback
+
+        print(
+            f"  Error saving best checkpoint: {e}\n{traceback.format_exc()}"
+        )
+
+
+def _save_best_intermediate_indices(
+    model,
+    schedule_config: PValEarlyStoppingProbeScheduleConfig,
+    datasets_map: Dict,
+    training_hp: Optional[Any],
+):
+    """Save intermediate index predictions for the 'best' model on specified data sources."""
+    from regnn.probe.functions.intermediate_index_probes import compute_index_prediction
+    import pandas as pd
+
+    index_col_name = schedule_config.save_on_best_index_column_name
+    if not index_col_name:
+        print(
+            "  Warning: save_on_best_index_column_name not set, "
+            "skipping intermediate index save."
+        )
+        return
+
+    save_dir = schedule_config.save_on_best_save_dir
+    base_name = schedule_config.save_on_best_model_save_name
+    file_id_suffix = (
+        f"-{schedule_config.save_on_best_file_id}"
+        if schedule_config.save_on_best_file_id
+        else ""
+    )
+
+    device = "cpu"
+    if training_hp and hasattr(training_hp, "device"):
+        device = training_hp.device
+
+    for ds in schedule_config.save_on_best_data_sources:
+        ds_enum = DataSource(ds) if isinstance(ds, str) else ds
+        dataset = datasets_map.get(ds_enum)
+        if dataset is None:
+            ds_name = ds_enum.value if hasattr(ds_enum, "value") else str(ds_enum)
+            print(
+                f"  Warning: No dataset for {ds_name}, "
+                "skipping intermediate index save for this source."
+            )
+            continue
+
+        ds_name = ds_enum.value if hasattr(ds_enum, "value") else str(ds_enum)
+        try:
+            moderators_tensor = dataset.to_tensor(device=device).get("moderators")
+            if moderators_tensor is None:
+                print(f"  Warning: No moderators in dataset for {ds_name}, skipping.")
+                continue
+
+            idx_pred_np = compute_index_prediction(model, moderators_tensor)
+            df_indices = dataset.df_orig.copy()
+            df_indices[index_col_name] = idx_pred_np
+
+            indices_filename = (
+                f"{base_name}{file_id_suffix}_best_{ds_name}-indices.dta"
+            )
+            save_path = os.path.join(save_dir, indices_filename)
+            os.makedirs(save_dir, exist_ok=True)
+            df_indices.to_stata(save_path, write_index=False)
+            print(f"  Best intermediate index saved ({ds_name}): {save_path}")
+        except Exception as e:
+            import traceback
+
+            print(
+                f"  Error saving best intermediate index for {ds_name}: "
+                f"{e}\n{traceback.format_exc()}"
+            )
 
 
 @register_probe("pval_early_stopping")
@@ -195,7 +290,97 @@ def pval_early_stopping_probe(
         if epoch >= schedule_config.patience and epoch not in joint_evaluation_epochs:
             joint_evaluation_epochs.append(epoch)
             joint_evaluation_epochs.sort()
-    
+
+    # --- Save on Best TEST p-value ---
+    if schedule_config.save_on_best and epoch >= schedule_config.patience:
+        # Get current epoch's TEST p-value
+        current_test_pval = None
+        test_key = DataSource.TEST  # Works for both enum and string keys (str enum)
+
+        # Try from p_values_history (available if TEST is in data_sources_to_monitor)
+        if test_key in p_values_history and epoch in p_values_history[test_key]:
+            current_test_pval = p_values_history[test_key][epoch]
+        else:
+            # TEST not in data_sources_to_monitor: scan current measurements directly
+            if current_measurements:
+                for measurement in current_measurements:
+                    if isinstance(measurement, OLSModeratedResultsProbe):
+                        try:
+                            if (
+                                DataSource(measurement.data_source) == DataSource.TEST
+                                and measurement.interaction_pval is not None
+                            ):
+                                current_test_pval = measurement.interaction_pval
+                                break
+                        except ValueError:
+                            continue
+
+        if current_test_pval is not None:
+            # Build full TEST p-value history for comparison
+            if test_key in p_values_history:
+                all_test_pvals = p_values_history[test_key]
+            else:
+                # TEST not monitored: build from trajectory
+                all_test_pvals = {}
+                for snapshot in trajectory.data:
+                    for measurement in snapshot.measurements:
+                        if isinstance(measurement, OLSModeratedResultsProbe):
+                            try:
+                                if (
+                                    DataSource(measurement.data_source) == DataSource.TEST
+                                    and measurement.interaction_pval is not None
+                                ):
+                                    all_test_pvals[snapshot.epoch] = (
+                                        measurement.interaction_pval
+                                    )
+                            except ValueError:
+                                continue
+                # Include current epoch
+                if epoch not in all_test_pvals:
+                    all_test_pvals[epoch] = current_test_pval
+
+            # Find the best previous TEST p-value (epochs >= patience, strictly before current)
+            previous_best = None
+            for ep, pval in all_test_pvals.items():
+                if ep >= schedule_config.patience and ep < epoch:
+                    if previous_best is None or pval < previous_best:
+                        previous_best = pval
+
+            is_new_best = (previous_best is None) or (
+                current_test_pval < previous_best
+            )
+
+            if is_new_best:
+                prev_best_str = (
+                    f"{previous_best:.6f}" if previous_best is not None else "N/A"
+                )
+                print(
+                    f"SAVE ON BEST: New best TEST p-value {current_test_pval:.6f} "
+                    f"(previous best: {prev_best_str}) at epoch {epoch + 1}."
+                )
+
+                model = kwargs.get("model")
+                datasets_map = shared_resource_accessor("datasets_map")
+                training_hp_shared = shared_resource_accessor("training_hp")
+
+                if model is not None:
+                    _save_best_checkpoint(model, schedule_config)
+                else:
+                    print(
+                        "  Warning: model not available, "
+                        "skipping best checkpoint save."
+                    )
+
+                if model is not None and datasets_map is not None:
+                    _save_best_intermediate_indices(
+                        model, schedule_config, datasets_map, training_hp_shared
+                    )
+                else:
+                    print(
+                        "  Warning: model or datasets_map not available, "
+                        "skipping best intermediate index save."
+                    )
+
     if len(joint_evaluation_epochs) < schedule_config.n_sequential_evals_to_pass:
         return EarlyStoppingSignalProbeResult(
             probe_type_name="pval_early_stopping",

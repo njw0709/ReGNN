@@ -768,6 +768,14 @@ class IndexPredictionModel(nn.Module):
                 predicted_index = moderators
             else:
                 predicted_index = moderators
+        # Apply softplus to ensure non-negative output.
+        # This guarantees the sign of the interaction is controlled purely by
+        # interaction_direction in ReGNN, regardless of network initialization.
+        if isinstance(predicted_index, list):
+            predicted_index = [F.softplus(pi) for pi in predicted_index]
+        else:
+            predicted_index = F.softplus(predicted_index)
+
         if self.vae:
             if not self.training:
                 return predicted_index, log_vars
@@ -1031,11 +1039,12 @@ class ReGNN(nn.Module):
                 predicted_interaction_term = predicted_index
             predicted_interaction_term = predicted_interaction_term * focal_predictor
 
-            # Apply interaction coefficient with direction constraint
-            if self.interaction_direction == "positive":
-                interaction_coef = torch.abs(self.interaction_coefficient)
-            else:  # negative
-                interaction_coef = -torch.abs(self.interaction_coefficient)
+            # Apply interaction coefficient with direction constraint.
+            # predicted_index is already non-negative (softplus in IndexPredictionModel),
+            # so interaction_direction purely controls the sign here.
+            interaction_coef = F.softplus(self.interaction_coefficient)
+            if self.interaction_direction == "negative":
+                interaction_coef = -interaction_coef
             
             predicted_interaction_term = interaction_coef * predicted_interaction_term
 
@@ -1063,11 +1072,12 @@ class ReGNN(nn.Module):
             else:
                 predicted_interaction_term = predicted_index
             
-            # Apply interaction coefficient with direction constraint
-            if self.interaction_direction == "positive":
-                interaction_coef = torch.abs(self.interaction_coefficient)
-            else:  # negative
-                interaction_coef = -torch.abs(self.interaction_coefficient)
+            # Apply interaction coefficient with direction constraint.
+            # predicted_index is already non-negative (softplus in IndexPredictionModel),
+            # so interaction_direction purely controls the sign here.
+            interaction_coef = F.softplus(self.interaction_coefficient)
+            if self.interaction_direction == "negative":
+                interaction_coef = -interaction_coef
             
             interaction_term = interaction_coef * predicted_interaction_term * focal_predictor  # shape: [batch, 1]
             

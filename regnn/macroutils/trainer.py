@@ -121,6 +121,11 @@ def train(
     if test_dataloader:
         dataloaders_map[DataSource.TEST] = test_dataloader
 
+    # Expose datasets and training_hp to probes via shared resources
+    # (needed by save-on-best in pval early stopping)
+    shared_resources["datasets_map"] = datasets_map
+    shared_resources["training_hp"] = training_hp
+
     # --- PRE-TRAINING PROBES ---
     probe_manager.execute_probes(
         frequency_context=FrequencyType.PRE_TRAINING,
