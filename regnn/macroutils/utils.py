@@ -761,8 +761,13 @@ def format_epoch_printout(
                 r2_str = (
                     f"{result.rsquared:.3f}" if result.rsquared is not None else "N/A"
                 )
+                coef_str = (
+                    f"{result.coefficients[1]:.4f}"
+                    if result.coefficients is not None and len(result.coefficients) > 1
+                    else "N/A"
+                )
 
-                current_pval_info = f"{ds_str} PVal: {pval_str} (R2: {r2_str})"
+                current_pval_info = f"{ds_str} Coef: {coef_str} PVal: {pval_str} (R2: {r2_str})"
                 if ds_str == DataSource.TRAIN.value:
                     train_pval_str = current_pval_info
                 elif ds_str == DataSource.TEST.value:
@@ -806,7 +811,12 @@ def format_epoch_printout(
                 else "N/A"
             )
             r2_str = f"{result.rsquared:.3f}" if result.rsquared is not None else "N/A"
-            current_pval_info = f"{ds_key} PVal: {pval_str} (R2: {r2_str}) [iter]"
+            coef_str = (
+                f"{result.coefficients[1]:.4f}"
+                if result.coefficients is not None and len(result.coefficients) > 1
+                else "N/A"
+            )
+            current_pval_info = f"{ds_key} Coef: {coef_str} PVal: {pval_str} (R2: {r2_str}) [iter]"
 
             if ds_key == DataSource.TRAIN.value and train_pval_str is None:
                 train_pval_str = current_pval_info

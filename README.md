@@ -2,30 +2,76 @@
 
 This repository contains code for the paper "Unveiling Population Heterogeneity in Health Risks Posed by Environmental Hazards Using Regression-Guided Neural Network".
 
-## Setup
+## Requirements
 
-1. Create a python environment with all of the dependencies installed
+- Python >= 3.9
+- (Optional) [Stata](https://www.stata.com/) — only needed if you want to use the Stata-backed regression functions (`OLS_stata`, `VIF_stata`). The pure-Python alternative via **statsmodels** (`OLS_statsmodel`, `VIF_statsmodel`) works without Stata.
+
+## Installation
+
+### Option 1 — uv (recommended)
+
+[uv](https://docs.astral.sh/uv/) is the recommended way to manage the environment.
+
+```bash
+# Create a virtual environment and install the package in editable mode
+uv venv --python 3.9
+source .venv/bin/activate
+uv pip install -e .
+```
+
+To include development dependencies (pytest, black):
+
+```bash
+uv pip install -e ".[dev]"
+```
+
+### Option 2 — pip
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+With development extras:
+
+```bash
+pip install -e ".[dev]"
+```
+
+### Option 3 — conda + pip
 
 ```bash
 conda create -n regnn python=3.9
 conda activate regnn
-pip install -r requirements.txt
+pip install -e .
 ```
 
-2. We are using stata to run the regression models. You can install stata from [here](https://www.stata.com/).
+### Legacy requirements.txt
 
-3. Change code in train/eval.py to point to the stata executable on your machine.
-   Example:
-
-```python
-def init_stata():
-    stata_setup.config("/usr/local/stata17", "mp") # Change this to point to your stata executable
-```
-
-4. Install mihm library in your python environment. You need to be in the base directory of this repository.
+A `requirements.txt` file is still provided for backward compatibility, but `pyproject.toml` is the source of truth for dependencies.
 
 ```bash
-pip install -e . #install mihm in editable mode
+pip install -r requirements.txt
+pip install -e .
+```
+
+## Stata Configuration (optional)
+
+If you plan to use the Stata-backed evaluation functions, install Stata and point the library to your local installation:
+
+```python
+from regnn.eval import init_stata
+
+# Adjust the path and edition to match your Stata installation
+init_stata()  # uses stata_setup.config("/usr/local/stata17", "mp") by default
+```
+
+If you do **not** have Stata, you can use the statsmodels equivalents instead — no extra configuration is needed:
+
+```python
+from regnn.eval import OLS_statsmodel, VIF_statsmodel
 ```
 
 ## Experiments
