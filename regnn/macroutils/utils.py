@@ -507,9 +507,14 @@ def compute_ols_ref_index(dataset, regression_config, data_readin_config) -> np.
     weighted by survey weights) and returns ``moderators @ γ̂`` where ``γ̂``
     are the estimated per-moderator interaction coefficients.
 
+    Column names are read from ``dataset.config`` (which reflects post-
+    preprocessing names, e.g. after one-hot encoding) rather than from
+    ``regression_config`` (which may contain pre-preprocessing originals).
+
     Args:
         dataset: A :class:`ReGNNDataset` with processed data in ``dataset.df``.
-        regression_config: :class:`ModeratedRegressionConfig` with variable names.
+        regression_config: :class:`ModeratedRegressionConfig` — only used for
+            ``control_moderators`` flag and ``outcome_col``.
         data_readin_config: :class:`DataFrameReadInConfig` for column metadata.
 
     Returns:
@@ -519,11 +524,13 @@ def compute_ols_ref_index(dataset, regression_config, data_readin_config) -> np.
 
     df = dataset.df.copy()
 
-    # --- build design matrix ---
-    outcome_col = regression_config.outcome_col
-    focal_col = regression_config.focal_predictor
-    moderator_cols = regression_config.moderators
-    controlled_cols = list(regression_config.controlled_cols)
+    # --- Pull column names from the *dataset config* (post-preprocessing) ---
+    # These lists are updated in-place by PreprocessorMixin.preprocess() when
+    # categorical / binary columns are one-hot encoded.
+    outcome_col = dataset.config.outcome
+    focal_col = dataset.config.focal_predictor
+    moderator_cols = dataset.config.moderators
+    controlled_cols = list(dataset.config.controlled_predictors)
     if regression_config.control_moderators:
         controlled_cols = controlled_cols + (
             [m for sublist in moderator_cols for m in sublist]
@@ -545,19 +552,16 @@ def compute_ols_ref_index(dataset, regression_config, data_readin_config) -> np.
         interaction_cols.append(int_col_name)
 
     # Design matrix: intercept + focal + interactions + controls
-    X_cols = [focal_col] + interaction_cols + controlled_cols
+    # De-duplicate in case control_moderators added mods already in controls
+    X_cols = list(dict.fromkeys([focal_col] + interaction_cols + controlled_cols))
     X = sm.add_constant(df[X_cols].astype(float))
     y = df[outcome_col].astype(float)
 
     # Weights (WLS when survey weights are available)
     weights = None
-    if data_readin_config.survey_weight_col is not None:
-        weight_col = data_readin_config.survey_weight_col
-        # The weight column may have been renamed; check processed df
-        if weight_col in df.columns:
-            weights = df[weight_col].astype(float)
-        elif dataset.config.survey_weights in df.columns:
-            weights = df[dataset.config.survey_weights].astype(float)
+    weight_col = dataset.config.survey_weights
+    if weight_col is not None and weight_col in df.columns:
+        weights = df[weight_col].astype(float)
 
     if weights is not None:
         model_ols = sm.WLS(y, X, weights=weights).fit()
