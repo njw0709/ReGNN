@@ -316,7 +316,11 @@ def train(
                     batch_moderators = batch_data["moderators"]
                     idx_model = model.index_prediction_model
                     if hasattr(idx_model, "vae") and idx_model.vae:
-                        if model.training and hasattr(idx_model, "output_mu_var") and idx_model.output_mu_var:
+                        if (
+                            model.training
+                            and hasattr(idx_model, "output_mu_var")
+                            and idx_model.output_mu_var
+                        ):
                             pred_idx, _, _ = idx_model(batch_moderators)
                         else:
                             pred_idx, _ = idx_model(batch_moderators)

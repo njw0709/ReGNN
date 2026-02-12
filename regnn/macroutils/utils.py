@@ -658,8 +658,9 @@ def setup_loss_and_optimizer(
             )
 
     # 3. Setup Optimizer
-    # Exclude parameters already in mmr_parameters (e.g. BN affine params)
+    # Exclude parameters already in mmr_parameters (e.g. interaction_coefficient)
     # to avoid duplicate entries across optimizer parameter groups.
+    # BN uses affine=False, so it has no learnable parameters to worry about.
     mmr_param_ids = {id(p) for p in model.mmr_parameters}
     nn_params = [p for p in model.index_prediction_model.parameters() if id(p) not in mmr_param_ids]
     if model.include_bias_focal_predictor:

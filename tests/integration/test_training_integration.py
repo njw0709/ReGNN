@@ -667,16 +667,10 @@ def _compute_simple_ref_index(dataset):
 
 
 @pytest.mark.parametrize(
-    "use_closed_form,interaction_direction",
-    [
-        (False, "positive"),
-        (False, "negative"),
-        (True, "positive"),
-    ],
+    "use_closed_form",
+    [False, True],
 )
-def test_training_with_anchor_loss(
-    anchor_dataset, use_closed_form, interaction_direction
-):
+def test_training_with_anchor_loss(anchor_dataset, use_closed_form):
     """Full training loop with pre-computed ref_index and anchor loss."""
     torch.manual_seed(42)
 
@@ -694,23 +688,21 @@ def test_training_with_anchor_loss(
         batch_norm=True,
         dropout=0.0,
         device="cpu",
-        interaction_direction=interaction_direction,
         use_closed_form_linear_weights=use_closed_form,
     )
     model = ReGNN.from_config(model_config)
 
-    # Verify BN affine params are in mmr_parameters
+    # BN is affine=False, so no learnable BN params
     bn = model.index_prediction_model.bn
-    mmr_ids = {id(p) for p in model.mmr_parameters}
-    assert id(bn.weight) in mmr_ids
-    assert id(bn.bias) in mmr_ids
+    assert not bn.affine
 
     # 3. Optimizer with separate groups (mirrors setup_loss_and_optimizer)
-    mmr_param_ids = {id(p) for p in model.mmr_parameters}
+    mmr_ids = {id(p) for p in model.mmr_parameters}
     nn_params = [
         p for p in model.index_prediction_model.parameters()
-        if id(p) not in mmr_param_ids
+        if id(p) not in mmr_ids
     ]
+
     optimizer = torch.optim.AdamW([
         {"params": nn_params, "lr": 1e-3},
         {"params": model.mmr_parameters, "lr": 1e-3},
@@ -797,9 +789,9 @@ def test_training_with_anchor_loss(
 
     # After some training, the index should have positive correlation with
     # ref_index (since anchor loss pushed it that way).  Only check for the
-    # non-closed-form positive direction — the closed-form path solves linear
-    # weights analytically so the NN needs more epochs to converge.
-    if interaction_direction == "positive" and not use_closed_form:
+    # non-closed-form path — the closed-form path solves linear weights
+    # analytically so the NN needs more epochs to converge.
+    if not use_closed_form:
         model.eval()
         with torch.no_grad():
             all_mods = torch.tensor(

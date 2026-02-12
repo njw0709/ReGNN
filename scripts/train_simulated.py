@@ -90,7 +90,6 @@ def main():
         n_ensemble=1,
         include_bias_focal_predictor=True,
         control_moderators=False,
-        interaction_direction="positive",
     )
 
     # 4. TrainingHyperParams

@@ -582,13 +582,13 @@ class IndexPredictionModel(nn.Module):
             # For single model, use the last hidden layer size
             if self.num_models == 1:
                 num_features = hidden_layer_sizes[-1]
-                self.bn = nn.BatchNorm1d(num_features, affine=True)
+                self.bn = nn.BatchNorm1d(num_features, affine=False)
             # For multiple models, sum the last hidden layer sizes
             else:
                 self.bns = nn.ModuleList()
                 for hs in hidden_layer_sizes:
                     num_features = hs[-1]
-                    self.bns.append(nn.BatchNorm1d(num_features, affine=True))
+                    self.bns.append(nn.BatchNorm1d(num_features, affine=False))
 
         if self.num_models == 1:
             if use_soft_tree:
@@ -813,7 +813,7 @@ class ReGNN(nn.Module):
             batch_norm=config.nn_config.batch_norm,
             vae=config.nn_config.vae,
             output_mu_var=config.nn_config.output_mu_var,
-            interaction_direction=config.interaction_direction,
+            # interaction direction is controlled by anchor loss (via ref_index)
             n_ensemble=config.nn_config.n_ensemble,
             use_closed_form_linear_weights=config.use_closed_form_linear_weights,
             use_resmlp=config.nn_config.use_resmlp,
@@ -834,7 +834,6 @@ class ReGNN(nn.Module):
         batch_norm: bool = True,
         vae: bool = True,
         output_mu_var: bool = True,
-        interaction_direction: str = "positive",
         n_ensemble: int = 1,
         use_closed_form_linear_weights: bool = False,
         use_resmlp: bool = False,
@@ -909,25 +908,10 @@ class ReGNN(nn.Module):
         self.device = device
         self.batch_norm = batch_norm
 
-        # Add BN affine parameters to mmr_parameters so they update on the
-        # regression gradient accumulation schedule (slow, stable updates).
-        if batch_norm:
-            idx_model = self.index_prediction_model
-            if hasattr(idx_model, 'bn') and idx_model.bn is not None:
-                self.mmr_parameters.extend(
-                    [p for p in idx_model.bn.parameters()]
-                )
-            if hasattr(idx_model, 'bns') and idx_model.bns is not None:
-                for bn_layer in idx_model.bns:
-                    self.mmr_parameters.extend(
-                        [p for p in bn_layer.parameters()]
-                    )
-
         self.include_bias_focal_predictor = include_bias_focal_predictor
 
         if include_bias_focal_predictor:
             self.xf_bias = nn.Parameter(torch.randn(1, 1))
-        self.interaction_direction = interaction_direction
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -1045,13 +1029,10 @@ class ReGNN(nn.Module):
                 predicted_interaction_term = predicted_index
             predicted_interaction_term = predicted_interaction_term * focal_predictor
 
-            # Apply interaction coefficient with direction constraint.
-            # predicted_index is already non-negative (softplus in IndexPredictionModel),
-            # so interaction_direction purely controls the sign here.
+            # interaction_coef is always positive (softplus).  The direction
+            # of the interaction effect is encoded in predicted_index, which
+            # the anchor loss steers to correlate with the OLS reference.
             interaction_coef = F.softplus(self.interaction_coefficient)
-            if self.interaction_direction == "negative":
-                interaction_coef = -interaction_coef
-            
             predicted_interaction_term = interaction_coef * predicted_interaction_term
 
             # Only compute controlled term if we have controlled variables
@@ -1078,13 +1059,9 @@ class ReGNN(nn.Module):
             else:
                 predicted_interaction_term = predicted_index
             
-            # Apply interaction coefficient with direction constraint.
-            # predicted_index is already non-negative (softplus in IndexPredictionModel),
-            # so interaction_direction purely controls the sign here.
+            # interaction_coef is always positive (softplus).  Direction is
+            # encoded in predicted_index via the anchor loss.
             interaction_coef = F.softplus(self.interaction_coefficient)
-            if self.interaction_direction == "negative":
-                interaction_coef = -interaction_coef
-            
             interaction_term = interaction_coef * predicted_interaction_term * focal_predictor  # shape: [batch, 1]
             
             # Build design matrix with only linear predictors (excluding interaction)

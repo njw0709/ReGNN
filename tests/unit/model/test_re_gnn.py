@@ -117,15 +117,19 @@ def test_re_gnn_creation_with_control_moderators():
     assert output.shape == (batch_size, 1)
 
 
-def test_re_gnn_creation_with_different_interaction_directions():
+def test_re_gnn_interaction_coef_is_positive():
+    """interaction_coefficient is constrained positive via softplus."""
     config = ReGNNConfig.create(
         num_moderators=10,
         num_controlled=5,
         layer_input_sizes=[5, 1],
-        interaction_direction="negative",
     )
     model = ReGNN.from_config(config)
     assert isinstance(model, ReGNN)
+    # softplus(1.0) > 0
+    import torch.nn.functional as F
+    coef = F.softplus(model.interaction_coefficient)
+    assert (coef > 0).all()
     model.train()
     batch_size = 2
     moderators = torch.randn(batch_size, 10)

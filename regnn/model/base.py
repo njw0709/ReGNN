@@ -104,19 +104,10 @@ class ReGNNConfig(BaseModel):
         True, description="Whether to include bias for focal predictor"
     )
     control_moderators: bool = Field(False, description="Whether to control moderators")
-    interaction_direction: str = Field(
-        "positive", description="Direction of interaction effect"
-    )
     use_closed_form_linear_weights: bool = Field(
         False,
         description="Whether to update linear weights using closed form solution or gradient descent",
     )
-
-    @field_validator("interaction_direction")
-    def validate_interaction_direction(cls, v):
-        if v not in ["positive", "negative"]:
-            raise ValueError("interaction_direction must be 'positive' or 'negative'")
-        return v
 
     @classmethod
     def create(
