@@ -341,6 +341,27 @@ class PriorPenaltyLossConfig(LossConfigs):
     )
 
 
+class AnchorLossConfig(BaseModel):
+    """Configuration for anchor loss that guides interaction direction during early training.
+
+    Uses a pre-computed OLS reference index to penalize negative correlation
+    between the learned index and the reference. The penalty linearly decays
+    to zero over ``warmup_epochs``.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=False)
+    lambda_initial: float = Field(
+        1.0,
+        gt=0.0,
+        description="Initial weight for anchor loss",
+    )
+    warmup_epochs: int = Field(
+        50,
+        gt=0,
+        description="Number of epochs over which to linearly decay anchor loss to zero",
+    )
+
+
 class TrainingHyperParams(BaseModel):
     """Training specific hyperparameters"""
 
@@ -391,6 +412,15 @@ class TrainingHyperParams(BaseModel):
     loss_options: LossConfigs = Field(
         default_factory=LossConfigs,
         description="Configuration for loss function and regularization",
+    )
+
+    anchor_loss: Optional[AnchorLossConfig] = Field(
+        None,
+        description=(
+            "Anchor loss configuration for interaction direction guidance. "
+            "When set, a pre-computed OLS reference index is used to penalize "
+            "negative correlation with the learned index during early training."
+        ),
     )
 
     @model_validator(mode="after")

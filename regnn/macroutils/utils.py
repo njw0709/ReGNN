@@ -500,6 +500,80 @@ class PerGroupScheduler:
             raise ValueError(f"Unknown scheduler type: {type(config)}")
 
 
+def compute_ols_ref_index(dataset, regression_config, data_readin_config) -> np.ndarray:
+    """Pre-compute a reference index via OLS for the anchor loss.
+
+    Fits ``y ~ focal + Σ(moderator_j × focal) + controls`` (optionally
+    weighted by survey weights) and returns ``moderators @ γ̂`` where ``γ̂``
+    are the estimated per-moderator interaction coefficients.
+
+    Args:
+        dataset: A :class:`ReGNNDataset` with processed data in ``dataset.df``.
+        regression_config: :class:`ModeratedRegressionConfig` with variable names.
+        data_readin_config: :class:`DataFrameReadInConfig` for column metadata.
+
+    Returns:
+        1-D numpy array of length ``len(dataset)`` — the reference index.
+    """
+    import statsmodels.api as sm
+
+    df = dataset.df.copy()
+
+    # --- build design matrix ---
+    outcome_col = regression_config.outcome_col
+    focal_col = regression_config.focal_predictor
+    moderator_cols = regression_config.moderators
+    controlled_cols = list(regression_config.controlled_cols)
+    if regression_config.control_moderators:
+        controlled_cols = controlled_cols + (
+            [m for sublist in moderator_cols for m in sublist]
+            if isinstance(moderator_cols[0], list)
+            else list(moderator_cols)
+        )
+
+    # Flatten moderator cols for the linear interaction model
+    if isinstance(moderator_cols[0], list):
+        flat_mod_cols = [m for sublist in moderator_cols for m in sublist]
+    else:
+        flat_mod_cols = list(moderator_cols)
+
+    # Build interaction columns: moderator_j * focal
+    interaction_cols = []
+    for mc in flat_mod_cols:
+        int_col_name = f"__anchor_int_{mc}__"
+        df[int_col_name] = df[mc].astype(float) * df[focal_col].astype(float)
+        interaction_cols.append(int_col_name)
+
+    # Design matrix: intercept + focal + interactions + controls
+    X_cols = [focal_col] + interaction_cols + controlled_cols
+    X = sm.add_constant(df[X_cols].astype(float))
+    y = df[outcome_col].astype(float)
+
+    # Weights (WLS when survey weights are available)
+    weights = None
+    if data_readin_config.survey_weight_col is not None:
+        weight_col = data_readin_config.survey_weight_col
+        # The weight column may have been renamed; check processed df
+        if weight_col in df.columns:
+            weights = df[weight_col].astype(float)
+        elif dataset.config.survey_weights in df.columns:
+            weights = df[dataset.config.survey_weights].astype(float)
+
+    if weights is not None:
+        model_ols = sm.WLS(y, X, weights=weights).fit()
+    else:
+        model_ols = sm.OLS(y, X).fit()
+
+    # Extract γ̂ — the coefficients for the interaction columns
+    gamma_hat = np.array([model_ols.params[ic] for ic in interaction_cols])
+
+    # Compute ref_index = moderators @ γ̂
+    moderators_array = df[flat_mod_cols].astype(float).to_numpy()
+    ref_index = moderators_array @ gamma_hat
+
+    return ref_index
+
+
 def setup_loss_and_optimizer(
     model: ReGNN,
     training_hyperparams: TrainingHyperParams,  # Use the specific type
@@ -580,7 +654,10 @@ def setup_loss_and_optimizer(
             )
 
     # 3. Setup Optimizer
-    nn_params = [p for p in model.index_prediction_model.parameters()]
+    # Exclude parameters already in mmr_parameters (e.g. BN affine params)
+    # to avoid duplicate entries across optimizer parameter groups.
+    mmr_param_ids = {id(p) for p in model.mmr_parameters}
+    nn_params = [p for p in model.index_prediction_model.parameters() if id(p) not in mmr_param_ids]
     if model.include_bias_focal_predictor:
         nn_params.append(model.xf_bias)
     optimizer = optim.AdamW(

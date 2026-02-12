@@ -582,13 +582,13 @@ class IndexPredictionModel(nn.Module):
             # For single model, use the last hidden layer size
             if self.num_models == 1:
                 num_features = hidden_layer_sizes[-1]
-                self.bn = nn.BatchNorm1d(num_features, affine=False)
+                self.bn = nn.BatchNorm1d(num_features, affine=True)
             # For multiple models, sum the last hidden layer sizes
             else:
                 self.bns = nn.ModuleList()
                 for hs in hidden_layer_sizes:
                     num_features = hs[-1]
-                    self.bns.append(nn.BatchNorm1d(num_features, affine=False))
+                    self.bns.append(nn.BatchNorm1d(num_features, affine=True))
 
         if self.num_models == 1:
             if use_soft_tree:
@@ -768,14 +768,6 @@ class IndexPredictionModel(nn.Module):
                 predicted_index = moderators
             else:
                 predicted_index = moderators
-        # Apply softplus to ensure non-negative output.
-        # This guarantees the sign of the interaction is controlled purely by
-        # interaction_direction in ReGNN, regardless of network initialization.
-        if isinstance(predicted_index, list):
-            predicted_index = [F.softplus(pi) for pi in predicted_index]
-        else:
-            predicted_index = F.softplus(predicted_index)
-
         if self.vae:
             if not self.training:
                 return predicted_index, log_vars
@@ -916,6 +908,20 @@ class ReGNN(nn.Module):
 
         self.device = device
         self.batch_norm = batch_norm
+
+        # Add BN affine parameters to mmr_parameters so they update on the
+        # regression gradient accumulation schedule (slow, stable updates).
+        if batch_norm:
+            idx_model = self.index_prediction_model
+            if hasattr(idx_model, 'bn') and idx_model.bn is not None:
+                self.mmr_parameters.extend(
+                    [p for p in idx_model.bn.parameters()]
+                )
+            if hasattr(idx_model, 'bns') and idx_model.bns is not None:
+                for bn_layer in idx_model.bns:
+                    self.mmr_parameters.extend(
+                        [p for p in bn_layer.parameters()]
+                    )
 
         self.include_bias_focal_predictor = include_bias_focal_predictor
 

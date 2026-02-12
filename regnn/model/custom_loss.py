@@ -198,3 +198,46 @@ def prior_penalty_loss(lambda_prior=0.01, reduction: str = "mean"):
         return total_loss
 
     return partial(loss, lambda_prior=lambda_prior, reduction=reduction)
+
+
+def anchor_correlation_loss(predicted_index, reference_index, weights=None):
+    """Negative Pearson correlation between predicted and reference index.
+
+    Returns ``-corr`` so that *minimising* the loss maximises the positive
+    correlation between the learned index and the OLS reference index.
+
+    Args:
+        predicted_index: Tensor of shape ``(batch,)`` or ``(batch, 1)`` —
+            the current network output for the batch.
+        reference_index: Tensor of same shape — the pre-computed OLS
+            reference index for the same observations.
+        weights: Optional tensor of shape ``(batch,)`` or ``(batch, 1)`` —
+            survey / probability weights.  When provided a *weighted*
+            Pearson correlation is computed.
+
+    Returns:
+        Scalar tensor in ``[-1, 1]`` (``-1`` = perfect positive
+        correlation, ``+1`` = perfect negative correlation).
+    """
+    pred = predicted_index.squeeze(-1)
+    ref = reference_index.squeeze(-1)
+
+    if weights is not None:
+        w = weights.squeeze(-1)
+        w_sum = w.sum()
+        pred_mean = (w * pred).sum() / w_sum
+        ref_mean = (w * ref).sum() / w_sum
+        pred_c = pred - pred_mean
+        ref_c = ref - ref_mean
+        cov = (w * pred_c * ref_c).sum() / w_sum
+        pred_std = ((w * pred_c ** 2).sum() / w_sum).sqrt()
+        ref_std = ((w * ref_c ** 2).sum() / w_sum).sqrt()
+    else:
+        pred_c = pred - pred.mean()
+        ref_c = ref - ref.mean()
+        cov = (pred_c * ref_c).mean()
+        pred_std = pred_c.norm() / (pred_c.numel() ** 0.5)
+        ref_std = ref_c.norm() / (ref_c.numel() ** 0.5)
+
+    corr = cov / (pred_std * ref_std + 1e-8)
+    return -corr

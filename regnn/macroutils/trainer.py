@@ -17,7 +17,9 @@ from .utils import (
     setup_loss_and_optimizer,
     format_epoch_printout,
     balance_gradients_for_regnn,
+    compute_ols_ref_index,
 )
+from regnn.model.custom_loss import anchor_correlation_loss
 
 
 def train(
@@ -137,6 +139,26 @@ def train(
         model_config=regnn_model_cfg,
     )
     # --- END PRE-TRAINING PROBES ---
+
+    # --- ANCHOR LOSS: pre-compute OLS reference index ---
+    use_anchor_loss = training_hp.anchor_loss is not None
+    anchor_lambda_initial = 0.0
+    anchor_warmup_epochs = 1
+    if use_anchor_loss:
+        anchor_lambda_initial = training_hp.anchor_loss.lambda_initial
+        anchor_warmup_epochs = training_hp.anchor_loss.warmup_epochs
+
+        ref_index_np = compute_ols_ref_index(
+            dataset=train_dataset,
+            regression_config=macro_config.regression,
+            data_readin_config=macro_config.read_config,
+        )
+        train_dataset.set_ref_index(ref_index_np)
+        print(
+            f"Anchor loss enabled: lambda_initial={anchor_lambda_initial}, "
+            f"warmup_epochs={anchor_warmup_epochs}"
+        )
+    # --- END ANCHOR LOSS SETUP ---
 
     # Initialize temperature annealer if configured
     temperature_annealer = None
@@ -283,6 +305,34 @@ def train(
                 total_batch_loss.ndim > 0
             ):  # Default mean reduction if not using survey weights and loss is not scalar
                 total_batch_loss = total_batch_loss.mean()
+
+            # --- Anchor loss ---
+            if use_anchor_loss:
+                lambda_anchor = anchor_lambda_initial * max(
+                    0.0, 1.0 - epoch / anchor_warmup_epochs
+                )
+                if lambda_anchor > 0.0:
+                    # Get predicted_index from index prediction model
+                    batch_moderators = batch_data["moderators"]
+                    idx_model = model.index_prediction_model
+                    if hasattr(idx_model, "vae") and idx_model.vae:
+                        if model.training and hasattr(idx_model, "output_mu_var") and idx_model.output_mu_var:
+                            pred_idx, _, _ = idx_model(batch_moderators)
+                        else:
+                            pred_idx, _ = idx_model(batch_moderators)
+                    else:
+                        pred_idx = idx_model(batch_moderators)
+                    # Handle list output (multiple models)
+                    if isinstance(pred_idx, list):
+                        pred_idx = torch.cat(pred_idx, dim=1)
+                    if pred_idx.shape[1] > 1:
+                        pred_idx = pred_idx.sum(dim=1, keepdim=True)
+
+                    batch_ref_index = batch_data["ref_index"]
+                    a_loss = anchor_correlation_loss(
+                        pred_idx, batch_ref_index, weights=s_weights
+                    )
+                    total_batch_loss = total_batch_loss + lambda_anchor * a_loss
 
             total_batch_loss.backward()
 

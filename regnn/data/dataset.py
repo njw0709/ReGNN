@@ -10,6 +10,8 @@ from .preprocessor_mixin import PreprocessorMixin
 class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
     """Main dataset class for ReGNN models"""
 
+    _REF_INDEX_COL = "__ref_index__"
+
     def __init__(
         self,
         df: pd.DataFrame,
@@ -24,6 +26,24 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
         self.output_mode = output_mode
         self.device = device
         self.dtype = dtype
+
+    @property
+    def has_ref_index(self) -> bool:
+        """Whether a reference index has been set for anchor loss."""
+        return self._REF_INDEX_COL in self.df.columns
+
+    def set_ref_index(self, values: np.ndarray) -> None:
+        """Store a pre-computed reference index for anchor loss.
+
+        Args:
+            values: 1-D array of length ``len(self)`` containing the OLS
+                reference index for each observation.
+        """
+        if len(values) != len(self):
+            raise ValueError(
+                f"ref_index length ({len(values)}) != dataset length ({len(self)})"
+            )
+        self.df[self._REF_INDEX_COL] = values
 
     def _initial_processing(
         self, df: pd.DataFrame, df_dtypes: Dict[str, str], rename_dict: Dict[str, str]
@@ -141,6 +161,11 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
                 self.config.survey_weights, idx, as_tensor
             )
 
+        if self.has_ref_index:
+            result["ref_index"] = self._get_item_value(
+                self._REF_INDEX_COL, idx, as_tensor
+            )
+
         return result
 
     def __repr__(self):
@@ -210,6 +235,10 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
             item_dict["weights"] = (
                 self.df[self.config.survey_weights].to_numpy().astype(dtype)
             )
+        if self.has_ref_index:
+            item_dict["ref_index"] = (
+                self.df[self._REF_INDEX_COL].to_numpy().astype(dtype)
+            )
         return item_dict
 
     def to_tensor(self, dtype=torch.float32, device="cpu"):
@@ -249,5 +278,9 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
         if self.config.survey_weights is not None:
             item_dict["weights"] = torch.tensor(
                 self.df[self.config.survey_weights].to_numpy(), dtype=dtype
+            ).to(device)
+        if self.has_ref_index:
+            item_dict["ref_index"] = torch.tensor(
+                self.df[self._REF_INDEX_COL].to_numpy(), dtype=dtype
             ).to(device)
         return item_dict

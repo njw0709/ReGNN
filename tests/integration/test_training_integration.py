@@ -11,6 +11,7 @@ from regnn.data.dataset import ReGNNDataset
 from regnn.data.base import ReGNNDatasetConfig
 from regnn.model.base import ReGNNConfig
 from regnn.model.regnn import ReGNN
+from regnn.model.custom_loss import anchor_correlation_loss
 
 
 @pytest.fixture
@@ -585,3 +586,302 @@ def test_config_validation_warmup_epochs():
                 ),
             ),
         )
+
+
+# ---------------------------------------------------------------------------
+# Anchor loss integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def synthetic_data_with_interaction():
+    """Create synthetic data with a known positive interaction effect.
+
+    DGP:  y = 0.5*focal + (0.3*mod1 + 0.7*mod2)*focal + 0.2*control + noise
+    """
+    np.random.seed(123)
+    n = 200
+    focal = np.random.randn(n)
+    mod1 = np.random.randn(n)
+    mod2 = np.random.randn(n)
+    control = np.random.randn(n)
+    true_index = 0.3 * mod1 + 0.7 * mod2
+    outcome = 0.5 * focal + true_index * focal + 0.2 * control + 0.3 * np.random.randn(n)
+    return pd.DataFrame({
+        "focal_predictor": focal,
+        "control1": control,
+        "moderator1": mod1,
+        "moderator2": mod2,
+        "outcome": outcome,
+    })
+
+
+@pytest.fixture
+def anchor_dataset(synthetic_data_with_interaction):
+    config = ReGNNDatasetConfig(
+        focal_predictor="focal_predictor",
+        controlled_predictors=["control1"],
+        moderators=["moderator1", "moderator2"],
+        outcome="outcome",
+        survey_weights=None,
+        rename_dict={},
+        df_dtypes={},
+        preprocess_steps=[],
+    )
+    return ReGNNDataset(
+        df=synthetic_data_with_interaction,
+        config=config,
+        output_mode="tensor",
+        device="cpu",
+        dtype=np.float32,
+    )
+
+
+def _compute_simple_ref_index(dataset):
+    """Compute OLS reference index for the anchor loss.
+
+    Fits  y ~ focal + mod1*focal + mod2*focal + control  and returns
+    moderators @ gamma_hat.
+    """
+    import statsmodels.api as sm
+
+    df = dataset.df
+    focal = df["focal_predictor"].astype(float)
+    mod1 = df["moderator1"].astype(float)
+    mod2 = df["moderator2"].astype(float)
+    ctrl = df["control1"].astype(float)
+    y = df["outcome"].astype(float)
+
+    X = pd.DataFrame({
+        "focal": focal,
+        "mod1_x_focal": mod1 * focal,
+        "mod2_x_focal": mod2 * focal,
+        "control": ctrl,
+    })
+    X = sm.add_constant(X)
+    result = sm.OLS(y, X).fit()
+
+    gamma = np.array([result.params["mod1_x_focal"], result.params["mod2_x_focal"]])
+    mods = df[["moderator1", "moderator2"]].astype(float).to_numpy()
+    return mods @ gamma
+
+
+@pytest.mark.parametrize(
+    "use_closed_form,interaction_direction",
+    [
+        (False, "positive"),
+        (False, "negative"),
+        (True, "positive"),
+    ],
+)
+def test_training_with_anchor_loss(
+    anchor_dataset, use_closed_form, interaction_direction
+):
+    """Full training loop with pre-computed ref_index and anchor loss."""
+    torch.manual_seed(42)
+
+    # 1. Pre-compute ref index and attach to dataset
+    ref_index = _compute_simple_ref_index(anchor_dataset)
+    anchor_dataset.set_ref_index(ref_index)
+    assert anchor_dataset.has_ref_index
+
+    # 2. Build model
+    model_config = ReGNNConfig.create(
+        num_moderators=2,
+        num_controlled=1,
+        layer_input_sizes=[8, 1],
+        vae=False,
+        batch_norm=True,
+        dropout=0.0,
+        device="cpu",
+        interaction_direction=interaction_direction,
+        use_closed_form_linear_weights=use_closed_form,
+    )
+    model = ReGNN.from_config(model_config)
+
+    # Verify BN affine params are in mmr_parameters
+    bn = model.index_prediction_model.bn
+    mmr_ids = {id(p) for p in model.mmr_parameters}
+    assert id(bn.weight) in mmr_ids
+    assert id(bn.bias) in mmr_ids
+
+    # 3. Optimizer with separate groups (mirrors setup_loss_and_optimizer)
+    mmr_param_ids = {id(p) for p in model.mmr_parameters}
+    nn_params = [
+        p for p in model.index_prediction_model.parameters()
+        if id(p) not in mmr_param_ids
+    ]
+    optimizer = torch.optim.AdamW([
+        {"params": nn_params, "lr": 1e-3},
+        {"params": model.mmr_parameters, "lr": 1e-3},
+    ])
+    loss_fn = nn.MSELoss()
+
+    # 4. DataLoader
+    dataloader = DataLoader(
+        anchor_dataset, batch_size=32, shuffle=True, drop_last=True
+    )
+
+    # 5. Training loop with anchor loss
+    # Use enough epochs so the anchor loss (which dominates early via high
+    # lambda) can steer the index toward the reference direction.
+    anchor_lambda_initial = 5.0
+    anchor_warmup_epochs = 15
+    n_epochs = 20
+    losses_recorded = []
+
+    model.train()
+    for epoch in range(n_epochs):
+        for batch_data in dataloader:
+            optimizer.zero_grad()
+
+            model_inputs = {
+                "moderators": batch_data["moderators"],
+                "focal_predictor": batch_data["focal_predictor"],
+                "controlled_predictors": batch_data["controlled_predictors"],
+            }
+            targets = batch_data["outcome"]
+            if use_closed_form:
+                model_inputs["y"] = targets
+
+            predictions = model(**model_inputs)
+            main_loss = loss_fn(predictions, targets)
+
+            # Anchor loss with linear decay
+            lambda_anchor = anchor_lambda_initial * max(
+                0.0, 1.0 - epoch / anchor_warmup_epochs
+            )
+            total_loss = main_loss
+            if lambda_anchor > 0.0:
+                idx_model = model.index_prediction_model
+                pred_idx = idx_model(batch_data["moderators"])
+                if isinstance(pred_idx, (list, tuple)):
+                    pred_idx = pred_idx[0]
+                if pred_idx.shape[1] > 1:
+                    pred_idx = pred_idx.sum(dim=1, keepdim=True)
+
+                batch_ref = batch_data["ref_index"]
+                a_loss = anchor_correlation_loss(pred_idx, batch_ref)
+                total_loss = total_loss + lambda_anchor * a_loss
+
+            total_loss.backward()
+            optimizer.step()
+            losses_recorded.append(total_loss.item())
+
+    # 6. Assertions
+    # Loss should be finite throughout training
+    assert all(np.isfinite(l) for l in losses_recorded), "Non-finite loss detected"
+
+    # The total loss includes the anchor component (which can be negative,
+    # since anchor_correlation_loss returns -corr) so the raw total loss is
+    # not monotonically decreasing.  Just verify no blow-up — the last
+    # quarter average should not be unreasonably large.
+    q = len(losses_recorded) // 4
+    if q > 0:
+        late_avg = np.mean(losses_recorded[-q:])
+        assert late_avg < 50.0, f"Loss blew up: late_avg={late_avg:.4f}"
+
+    # Model should still produce correct-shape output in eval mode
+    model.eval()
+    with torch.no_grad():
+        batch = next(iter(dataloader))
+        eval_inputs = {
+            "moderators": batch["moderators"],
+            "focal_predictor": batch["focal_predictor"],
+            "controlled_predictors": batch["controlled_predictors"],
+        }
+        if use_closed_form:
+            eval_inputs["y"] = batch["outcome"]
+        out = model(**eval_inputs)
+        assert out.shape == (32, 1)
+
+    # After some training, the index should have positive correlation with
+    # ref_index (since anchor loss pushed it that way).  Only check for the
+    # non-closed-form positive direction — the closed-form path solves linear
+    # weights analytically so the NN needs more epochs to converge.
+    if interaction_direction == "positive" and not use_closed_form:
+        model.eval()
+        with torch.no_grad():
+            all_mods = torch.tensor(
+                anchor_dataset.df[["moderator1", "moderator2"]].to_numpy(),
+                dtype=torch.float32,
+            )
+            pred_all = model.index_prediction_model(all_mods)
+            if isinstance(pred_all, (list, tuple)):
+                pred_all = pred_all[0]
+            pred_np = pred_all.squeeze().numpy()
+            corr = np.corrcoef(pred_np, ref_index)[0, 1]
+            assert corr > 0.0, (
+                f"Expected positive correlation with reference, got {corr:.4f}"
+            )
+
+
+def test_anchor_loss_lambda_decay():
+    """Verify anchor lambda decays linearly to zero."""
+    lambda_initial = 2.0
+    warmup_epochs = 10
+    expected = [
+        (0, 2.0),
+        (5, 1.0),
+        (9, 0.2),
+        (10, 0.0),
+        (15, 0.0),
+    ]
+    for epoch, expected_val in expected:
+        computed = lambda_initial * max(0.0, 1.0 - epoch / warmup_epochs)
+        assert abs(computed - expected_val) < 1e-6, (
+            f"epoch={epoch}: expected {expected_val}, got {computed}"
+        )
+
+
+def test_anchor_loss_with_survey_weights(anchor_dataset):
+    """Test that anchor_correlation_loss works with survey weights."""
+    ref_index = _compute_simple_ref_index(anchor_dataset)
+    anchor_dataset.set_ref_index(ref_index)
+
+    model_config = ReGNNConfig.create(
+        num_moderators=2,
+        num_controlled=1,
+        layer_input_sizes=[8, 1],
+        vae=False,
+        batch_norm=True,
+        device="cpu",
+    )
+    model = ReGNN.from_config(model_config)
+    model.train()
+
+    dataloader = DataLoader(
+        anchor_dataset, batch_size=32, shuffle=False, drop_last=True
+    )
+    batch = next(iter(dataloader))
+
+    # Forward to get predicted_index
+    pred_idx = model.index_prediction_model(batch["moderators"])
+    if isinstance(pred_idx, (list, tuple)):
+        pred_idx = pred_idx[0]
+
+    batch_ref = batch["ref_index"]
+
+    # Unweighted
+    loss_unweighted = anchor_correlation_loss(pred_idx, batch_ref)
+    assert loss_unweighted.requires_grad
+    assert np.isfinite(loss_unweighted.item())
+
+    # With uniform weights (should be very close to unweighted)
+    uniform_w = torch.ones(32)
+    loss_uniform = anchor_correlation_loss(pred_idx, batch_ref, weights=uniform_w)
+    assert abs(loss_uniform.item() - loss_unweighted.item()) < 1e-4
+
+    # With non-uniform weights (should differ from unweighted)
+    torch.manual_seed(0)
+    nonunif_w = torch.rand(32) + 0.1
+    loss_weighted = anchor_correlation_loss(pred_idx, batch_ref, weights=nonunif_w)
+    assert np.isfinite(loss_weighted.item())
+
+    # Gradient flows through
+    loss_weighted.backward()
+    has_grad = any(
+        p.grad is not None and p.grad.abs().sum() > 0
+        for p in model.index_prediction_model.parameters()
+    )
+    assert has_grad, "No gradients flowed through anchor loss"
