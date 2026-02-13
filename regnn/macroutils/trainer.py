@@ -148,16 +148,26 @@ def train(
         anchor_lambda_initial = training_hp.anchor_loss.lambda_initial
         anchor_warmup_epochs = training_hp.anchor_loss.warmup_epochs
 
-        ref_index_np = compute_ols_ref_index(
-            dataset=train_dataset,
-            regression_config=macro_config.regression,
-            data_readin_config=macro_config.read_config,
-        )
-        train_dataset.set_ref_index(ref_index_np)
-        print(
-            f"Anchor loss enabled: lambda_initial={anchor_lambda_initial}, "
-            f"warmup_epochs={anchor_warmup_epochs}"
-        )
+        # If the dataset already carries a ref_index (e.g. pre-computed on the
+        # full data before bootstrapping), reuse it.  Otherwise compute it now.
+        if not train_dataset.has_ref_index:
+            ref_index_np = compute_ols_ref_index(
+                dataset=train_dataset,
+                regression_config=macro_config.regression,
+                data_readin_config=macro_config.read_config,
+            )
+            train_dataset.set_ref_index(ref_index_np)
+            print(
+                f"Anchor loss enabled (ref_index computed): "
+                f"lambda_initial={anchor_lambda_initial}, "
+                f"warmup_epochs={anchor_warmup_epochs}"
+            )
+        else:
+            print(
+                f"Anchor loss enabled (ref_index pre-computed): "
+                f"lambda_initial={anchor_lambda_initial}, "
+                f"warmup_epochs={anchor_warmup_epochs}"
+            )
     # --- END ANCHOR LOSS SETUP ---
 
     # Initialize temperature annealer if configured
