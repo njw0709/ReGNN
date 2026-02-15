@@ -43,7 +43,7 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
             raise ValueError(
                 f"ref_index length ({len(values)}) != dataset length ({len(self)})"
             )
-        self.df[self._REF_INDEX_COL] = values
+        self.df.loc[:, self._REF_INDEX_COL] = values
 
     def _initial_processing(
         self, df: pd.DataFrame, df_dtypes: Dict[str, str], rename_dict: Dict[str, str]

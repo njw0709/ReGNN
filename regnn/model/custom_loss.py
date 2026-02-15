@@ -150,7 +150,12 @@ def prior_penalty_loss(lambda_prior=0.01, reduction: str = "mean"):
     """
 
     def loss(
-        y_pred, y_true, moderators, model, lambda_prior=lambda_prior, reduction=reduction
+        y_pred,
+        y_true,
+        moderators,
+        model,
+        lambda_prior=lambda_prior,
+        reduction=reduction,
     ):
         """Combined MSE + L2 penalty on treatment effects.
 
@@ -170,7 +175,11 @@ def prior_penalty_loss(lambda_prior=0.01, reduction: str = "mean"):
             index_model = model.index_prediction_model
             # We need gradients to flow through predicted_index during training
             if hasattr(index_model, "vae") and index_model.vae:
-                if model.training and hasattr(index_model, "output_mu_var") and index_model.output_mu_var:
+                if (
+                    model.training
+                    and hasattr(index_model, "output_mu_var")
+                    and index_model.output_mu_var
+                ):
                     predicted_index, _, _ = index_model(moderators)
                 else:
                     predicted_index, _ = index_model(moderators)
@@ -182,11 +191,13 @@ def prior_penalty_loss(lambda_prior=0.01, reduction: str = "mean"):
                 predicted_index = torch.cat(predicted_index, dim=1)
 
             # Compute L2 penalty: sum of squared treatment effects
-            prior_penalty = torch.sum(predicted_index ** 2)
+            prior_penalty = torch.sum(predicted_index**2)
 
         # Combine losses
         if reduction == "mean":
-            total_loss = torch.mean(mse_loss) + lambda_prior * prior_penalty / y_pred.size(0)
+            total_loss = torch.mean(
+                mse_loss
+            ) + lambda_prior * prior_penalty / y_pred.size(0)
         elif reduction == "sum":
             total_loss = torch.sum(mse_loss) + lambda_prior * prior_penalty
         elif reduction == "none":
@@ -230,8 +241,8 @@ def anchor_correlation_loss(predicted_index, reference_index, weights=None):
         pred_c = pred - pred_mean
         ref_c = ref - ref_mean
         cov = (w * pred_c * ref_c).sum() / w_sum
-        pred_std = ((w * pred_c ** 2).sum() / w_sum).sqrt()
-        ref_std = ((w * ref_c ** 2).sum() / w_sum).sqrt()
+        pred_std = ((w * pred_c**2).sum() / w_sum).sqrt()
+        ref_std = ((w * ref_c**2).sum() / w_sum).sqrt()
     else:
         pred_c = pred - pred.mean()
         ref_c = ref - ref.mean()
@@ -240,4 +251,4 @@ def anchor_correlation_loss(predicted_index, reference_index, weights=None):
         ref_std = ref_c.norm() / (ref_c.numel() ** 0.5)
 
     corr = cov / (pred_std * ref_std + 1e-8)
-    return -corr
+    return -torch.tanh(10 * corr)
