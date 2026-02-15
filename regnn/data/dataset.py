@@ -34,7 +34,6 @@ class ReGNNDataset(BaseDataset, PreprocessorMixin, Dataset):
 
     def set_ref_index(self, values: np.ndarray) -> None:
         """Store a pre-computed reference index for anchor loss.
-
         Args:
             values: 1-D array of length ``len(self)`` containing the OLS
                 reference index for each observation.

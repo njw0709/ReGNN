@@ -10,12 +10,30 @@ class GroundTruthFactory:
     # 1. Soft Tree Generator
     # ==========================================
     def build_tree_blueprint(
-        self, X, binary_indices=None, depth=3, interaction_strength=5.0, sharpness=2.0
+        self,
+        X,
+        binary_indices=None,
+        depth=3,
+        interaction_strength=5.0,
+        sharpness=2.0,
+        oblique=False,
+        n_split_features=2,
     ):
         """
-        sharpness: Controls the 'steepness' of the splits.
-                   - 1.0 to 5.0: Very smooth, continuous transitions.
-                   - > 20.0: discrete step-function behavior.
+        Build a soft decision tree blueprint.
+
+        Args:
+            X: Training data of shape (n_samples, n_features).
+            binary_indices: Indices of binary features.
+            depth: Maximum tree depth.
+            interaction_strength: Range for leaf values.
+            sharpness: Controls the steepness of the sigmoid splits.
+                - 1.0 to 5.0: Very smooth, continuous transitions.
+                - > 20.0: discrete step-function behavior.
+            oblique: If True, each split uses a linear combination of
+                ``n_split_features`` features instead of a single feature.
+            n_split_features: Number of features per oblique split (ignored
+                when ``oblique=False``).
         """
         n_samples, n_features = X.shape
         bin_idx_set = set(binary_indices) if binary_indices else set()
@@ -28,30 +46,56 @@ class GroundTruthFactory:
 
             # Find Split
             for _ in range(5):
-                feat_idx = int(self.rng.choice(n_features))
-                node_X = X[indices, feat_idx]
+                if oblique:
+                    # Oblique split: linear combination of multiple features
+                    k = min(n_split_features, n_features)
+                    feat_indices = sorted(
+                        self.rng.choice(n_features, k, replace=False).tolist()
+                    )
+                    weights = self.rng.randn(k).tolist()
+                    # Normalise weights so scale is comparable across splits
+                    w_norm = np.sqrt(sum(w ** 2 for w in weights))
+                    if w_norm < 1e-8:
+                        continue
+                    weights = [w / w_norm for w in weights]
+
+                    # Project data through the weight vector
+                    node_X = np.sum(
+                        X[np.ix_(indices, feat_indices)]
+                        * np.array(weights)[None, :],
+                        axis=1,
+                    )
+                else:
+                    # Axis-aligned split: single feature
+                    feat_indices = [int(self.rng.choice(n_features))]
+                    weights = [1.0]
+                    node_X = X[indices, feat_indices[0]]
+
                 if len(np.unique(node_X)) < 2:
                     continue
 
                 # Determine Threshold
-                if feat_idx in bin_idx_set:
+                if not oblique and feat_indices[0] in bin_idx_set:
                     threshold = 0.5
                 else:
-                    lower, upper = np.percentile(node_X, 25), np.percentile(node_X, 75)
+                    lower, upper = np.percentile(node_X, 25), np.percentile(
+                        node_X, 75
+                    )
                     if upper - lower < 1e-6:
                         continue
-                    threshold = self.rng.uniform(lower, upper)
+                    threshold = float(self.rng.uniform(lower, upper))
 
-                # Check split validity (using Hard logic for construction to ensure balance)
+                # Check split validity
                 left_mask = node_X <= threshold
                 if np.sum(left_mask) == 0 or np.sum(~left_mask) == 0:
                     continue
 
                 return {
                     "type": "split",
-                    "feature_index": feat_idx,
-                    "threshold": float(threshold),
-                    "sharpness": float(sharpness),  # Store sharpness in the node
+                    "feature_indices": feat_indices,
+                    "weights": weights,
+                    "threshold": threshold,
+                    "sharpness": float(sharpness),
                     "left": build_node(indices[left_mask], current_depth + 1),
                     "right": build_node(indices[~left_mask], current_depth + 1),
                 }
@@ -60,7 +104,7 @@ class GroundTruthFactory:
             return {"type": "leaf", "value": float(val)}
 
         return {
-            "model_type": "soft_tree",  # Changed type name
+            "model_type": "soft_tree",
             "structure": build_node(np.arange(n_samples), 0),
         }
 
@@ -68,11 +112,26 @@ class GroundTruthFactory:
     # 2. Sparse Mixture (UPDATED: Per-Bump Features)
     # ==========================================
     def build_mixture_blueprint(
-        self, n_features, binary_indices=None, n_components=5, sparsity=3
+        self,
+        n_features,
+        binary_indices=None,
+        n_components=5,
+        sparsity=3,
+        axis_aligned=True,
     ):
         """
         Creates 'n_components' bumps.
         Each bump selects its OWN distinct set of 'sparsity' features.
+
+        Args:
+            n_features: Total number of input features.
+            binary_indices: Indices of binary features.
+            n_components: Number of Gaussian bumps.
+            sparsity: Number of features each bump operates on.
+            axis_aligned: If True (default), bumps are axis-aligned spheres.
+                If False, each bump gets a random linear transform ``L`` so
+                the distance becomes ``||L @ (x_sub - centroid)||^2``,
+                producing rotated ellipsoidal bumps.
         """
         bin_idx_set = set(binary_indices) if binary_indices else set()
 
@@ -88,23 +147,33 @@ class GroundTruthFactory:
                 if dim in bin_idx_set:
                     centroid[i] = self.rng.choice([0.0, 1.0])
                 else:
-                    # Continuous centroid in range [-2, 2]
                     centroid[i] = self.rng.uniform(-2.0, 2.0)
 
             # 3. Generate weight
             weight = self.rng.randn()
 
-            components.append(
-                {
-                    "active_dims": active_dims.tolist(),
-                    "centroid": centroid.tolist(),
-                    "weight": float(weight),
-                }
-            )
+            comp = {
+                "active_dims": active_dims.tolist(),
+                "centroid": centroid.tolist(),
+                "weight": float(weight),
+            }
+
+            # 4. Optional: random transform for non-axis-aligned bumps
+            if not axis_aligned:
+                # Random matrix L of shape (sparsity, sparsity).
+                # Precision matrix = L^T @ L is guaranteed positive definite.
+                # Scale entries so bumps don't collapse or explode.
+                L = self.rng.randn(sparsity, sparsity)
+                # Scale to have spectral norm ~ 1 (keeps bump widths reasonable)
+                svs = np.linalg.svd(L, compute_uv=False)
+                L = L / (svs[0] + 1e-8)
+                comp["transform"] = L.tolist()
+
+            components.append(comp)
 
         return {
             "model_type": "sparse_mixture",
-            "components": components,  # List of independent bumps
+            "components": components,
         }
 
     # ==========================================
@@ -184,7 +253,18 @@ class GroundTruthFactory:
             def soft_tree_predict_single(x, node):
                 if node["type"] == "leaf":
                     return node["value"]
-                feat_val = x[node["feature_index"]]
+
+                # Compute the projection value for this split
+                if "feature_indices" in node:
+                    # New format: oblique or axis-aligned via weight vector
+                    feat_val = sum(
+                        w * x[idx]
+                        for idx, w in zip(node["feature_indices"], node["weights"])
+                    )
+                else:
+                    # Legacy format: single feature_index
+                    feat_val = x[node["feature_index"]]
+
                 threshold = node["threshold"]
                 sharpness = node["sharpness"]
                 prob_left = 1.0 / (1.0 + np.exp(-sharpness * (threshold - feat_val)))
@@ -205,19 +285,26 @@ class GroundTruthFactory:
 
         elif blueprint["model_type"] == "sparse_mixture":
             components = blueprint["components"]
-            fast_components = [
-                (np.array(c["active_dims"]), np.array(c["centroid"]), c["weight"])
-                for c in components
-            ]
+            fast_components = []
+            for c in components:
+                active_dims = np.array(c["active_dims"])
+                centroid = np.array(c["centroid"])
+                weight = c["weight"]
+                transform = np.array(c["transform"]) if "transform" in c else None
+                fast_components.append((active_dims, centroid, weight, transform))
 
             def predict_mix(X):
                 X = np.array(X, dtype=float)
                 if X.ndim == 1:
                     X = X.reshape(1, -1)
                 y = np.zeros(X.shape[0])
-                for active_dims, centroid, weight in fast_components:
+                for active_dims, centroid, weight, transform in fast_components:
                     X_sub = X[:, active_dims]
-                    dist_sq = np.sum((X_sub - centroid) ** 2, axis=1)
+                    diff = X_sub - centroid  # (n_samples, sparsity)
+                    if transform is not None:
+                        # Rotated ellipsoidal bump: ||L @ diff||^2
+                        diff = diff @ transform.T  # (n_samples, sparsity)
+                    dist_sq = np.sum(diff ** 2, axis=1)
                     y += weight * np.exp(-0.5 * dist_sq)
                 return y
 
