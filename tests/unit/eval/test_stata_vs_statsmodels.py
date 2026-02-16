@@ -171,15 +171,12 @@ def _weighted_configs():
 
 
 def _reorder_stata_to_statsmodels(stata_vec: list) -> list:
-    """Reorder a Stata coefficient/SE/pvalue vector to match statsmodels order.
-
-    Stata orders variables as they appear in the command, with ``_cons`` last.
-    statsmodels (via ``add_constant``) places ``const`` first.
+    """Identity — both backends now use the same ordering (constant last).
 
     Stata:       [focal, interaction, ctrl1, mod1, mod2, ..., _cons]
-    statsmodels: [const, focal, interaction, ctrl1, mod1, mod2, ...]
+    statsmodels: [focal, interaction, ctrl1, mod1, mod2, ..., const]
     """
-    return [stata_vec[-1]] + stata_vec[:-1]
+    return stata_vec
 
 
 def _assert_results_close(
@@ -460,14 +457,13 @@ class TestStataVsStatsmodels:
         assert sm_result.status == "success"
 
         # Both should recover the true coefficients closely
-        # statsmodels order: [const, focal, focalxregnn_index, ctrl1, mod1]
+        # Both backends now use the same order: [focal, interaction, ctrl1, mod1, const]
         sm_coefs = sm_result.coefficients
-        assert sm_coefs[1] == pytest.approx(TRUE_BETA_FOCAL, abs=0.05)
-        assert sm_coefs[2] == pytest.approx(TRUE_BETA_INTERACTION, abs=0.05)
-        assert sm_coefs[3] == pytest.approx(TRUE_BETA_CTRL, abs=0.05)
-        assert sm_coefs[0] == pytest.approx(0.0, abs=0.05)  # intercept ≈ 0
+        assert sm_coefs[0] == pytest.approx(TRUE_BETA_FOCAL, abs=0.05)
+        assert sm_coefs[1] == pytest.approx(TRUE_BETA_INTERACTION, abs=0.05)
+        assert sm_coefs[2] == pytest.approx(TRUE_BETA_CTRL, abs=0.05)
+        assert sm_coefs[-1] == pytest.approx(0.0, abs=0.05)  # intercept ≈ 0
 
-        # Stata order: [focal, focalxindex, ctrl1, mod1, _cons]
         st_coefs = stata_result.coefficients
         assert st_coefs[0] == pytest.approx(TRUE_BETA_FOCAL, abs=0.05)
         assert st_coefs[1] == pytest.approx(TRUE_BETA_INTERACTION, abs=0.05)

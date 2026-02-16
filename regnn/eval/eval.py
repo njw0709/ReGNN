@@ -169,6 +169,7 @@ def _build_stata_style_summary(
     col_sep = f"{'-' * 13}-+{'-' * (W - 14)}"
 
     coef_lines = []
+    const_line = None
     alpha = 0.05
     t_crit = sp_stats.t.ppf(1 - alpha / 2, df_resid) if df_resid > 0 else float("nan")
 
@@ -183,10 +184,17 @@ def _build_stata_style_summary(
         ci_hi = coef + t_crit * se
         # Truncate long names to fit the column
         display_name = name if len(name) <= 13 else name[:12] + "~"
-        coef_lines.append(
+        line = (
             f"{display_name:>13s} | {coef:>12.6g} {se:>12.6g} "
             f"{t_val:>9.2f} {pv:>8.3f}   {ci_lo:>10.6g}  {ci_hi:>10.6g}"
         )
+        # Move constant to the end to match Stata convention
+        if name == "const":
+            const_line = line
+        else:
+            coef_lines.append(line)
+    if const_line is not None:
+        coef_lines.append(const_line)
 
     # --- Assemble ---
     parts = (
@@ -370,6 +378,16 @@ def OLS_statsmodel_from_config(
     # Fall back to a Stata-style summary in that case.
     raw_summary = _build_stata_style_summary(model_fit, y, rsq, adj_rsq, rmse, weights)
 
+    # Reorder coefficients/SEs/p-values so that the constant comes last,
+    # matching Stata convention where _cons is the final entry.  Downstream
+    # code (e.g. summary printouts) relies on coefficients[1] being the
+    # interaction term, which requires: [focal, interaction, controls…, const].
+    params_index = list(model_fit.params.index)
+    if params_index[0] == "const":
+        reorder = list(range(1, len(params_index))) + [0]
+    else:
+        reorder = list(range(len(params_index)))
+
     return OLSModeratedResultsProbe(
         data_source=data_source,
         status="success",
@@ -381,9 +399,9 @@ def OLS_statsmodel_from_config(
         adjusted_rsquared=adj_rsq,
         rmse=rmse,
         interaction_pval=interaction_pval,
-        coefficients=model_fit.params.tolist(),
-        standard_errors=model_fit.bse.tolist(),
-        p_values=model_fit.pvalues.tolist(),
+        coefficients=[model_fit.params.iloc[i] for i in reorder],
+        standard_errors=[model_fit.bse.iloc[i] for i in reorder],
+        p_values=[model_fit.pvalues.iloc[i] for i in reorder],
         n_observations=n_obs,
         raw_summary=raw_summary,
     )
